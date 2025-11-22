@@ -177,6 +177,31 @@ jobs:
           safe_import aws_iam_role.ecs_task_execution "${NAME_PREFIX}-ecs-task-execution-role"
           safe_import aws_iam_role.ecs_task "${NAME_PREFIX}-ecs-task-role"
           
+          # Import ECS Task Definition
+          safe_import aws_ecs_task_definition.strapi "${NAME_PREFIX}-task"
+          
+          # Import ECS Service (format: cluster_name/service_name)
+          CLUSTER_NAME="${NAME_PREFIX}-cluster"
+          SERVICE_NAME="${NAME_PREFIX}-service"
+          # Check if cluster exists first, then check if service exists
+          CLUSTER_EXISTS=$(aws ecs describe-clusters \
+            --clusters "${CLUSTER_NAME}" \
+            --query "clusters[0].clusterName" \
+            --output text \
+            --region "${AWS_REGION}" 2>/dev/null || echo "")
+          if [ -n "$CLUSTER_EXISTS" ] && [ "$CLUSTER_EXISTS" != "None" ] && [ "$CLUSTER_EXISTS" != "null" ]; then
+            # Check if service exists before importing
+            SERVICE_EXISTS=$(aws ecs describe-services \
+              --cluster "${CLUSTER_NAME}" \
+              --services "${SERVICE_NAME}" \
+              --query "services[0].serviceName" \
+              --output text \
+              --region "${AWS_REGION}" 2>/dev/null || echo "")
+            if [ -n "$SERVICE_EXISTS" ] && [ "$SERVICE_EXISTS" != "None" ] && [ "$SERVICE_EXISTS" != "null" ]; then
+              safe_import aws_ecs_service.strapi "${CLUSTER_NAME}/${SERVICE_NAME}"
+            fi
+          fi
+          
           echo "Import step completed"
 
       - name: Terraform Plan
