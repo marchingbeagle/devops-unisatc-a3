@@ -60,7 +60,15 @@ jobs:
             local resource=$1
             local identifier=$2
             echo "Importing $resource..."
-            terraform import "$resource" "$identifier" 2>&1 || echo "  (Resource doesn't exist or already imported - this is OK)"
+            terraform import \
+              -var="docker_image=${{ steps.image-tag.outputs.image_tag }}" \
+              -var="app_keys=${{ secrets.STRAPI_APP_KEYS }}" \
+              -var="admin_jwt_secret=${{ secrets.STRAPI_ADMIN_JWT_SECRET }}" \
+              -var="api_token_salt=${{ secrets.STRAPI_API_TOKEN_SALT }}" \
+              -var="transfer_token_salt=${{ secrets.STRAPI_TRANSFER_TOKEN_SALT }}" \
+              -var="aws_region=${{ secrets.AWS_REGION || 'us-east-1' }}" \
+              -input=false \
+              "$resource" "$identifier" 2>&1 || echo "  (Resource doesn't exist or already imported - this is OK)"
           }
           
           # Import CloudWatch Log Group
