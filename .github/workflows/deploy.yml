@@ -3,14 +3,14 @@ name: Deploy to AWS ECS
 on:
   push:
     branches:
-      - main
+      - master
   workflow_dispatch:
 
 jobs:
   deploy:
     name: Deploy to AWS ECS
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -83,12 +83,12 @@ jobs:
           echo "Waiting for ECS service to be healthy..."
           CLUSTER_NAME=$(cd terraform && terraform output -raw cluster_name)
           SERVICE_NAME=$(cd terraform && terraform output -raw service_name)
-          
+
           if [ -z "$CLUSTER_NAME" ] || [ -z "$SERVICE_NAME" ]; then
             echo "Could not retrieve cluster or service name"
             exit 0
           fi
-          
+
           # Wait up to 5 minutes for service to stabilize
           timeout 300 bash -c '
             while true; do
