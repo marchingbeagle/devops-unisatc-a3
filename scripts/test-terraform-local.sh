@@ -53,11 +53,12 @@ if [ ! -f "$TFVARS_FILE" ]; then
     
     # Generate secrets
     echo -e "\n${GREEN}Generating secrets...${NC}"
-    SECRETS=$(node "$SCRIPT_DIR/generate-secrets.js" 2>&1 | grep -E "^(APP_KEYS|ADMIN_JWT_SECRET|API_TOKEN_SALT|TRANSFER_TOKEN_SALT)=")
+    SECRETS=$(node "$SCRIPT_DIR/generate-secrets.js" 2>&1 | grep -E "^(APP_KEYS|ADMIN_JWT_SECRET|JWT_SECRET|API_TOKEN_SALT|TRANSFER_TOKEN_SALT)=")
     
     # Extract values
     APP_KEYS=$(echo "$SECRETS" | grep "APP_KEYS=" | cut -d'=' -f2-)
     ADMIN_JWT_SECRET=$(echo "$SECRETS" | grep "ADMIN_JWT_SECRET=" | cut -d'=' -f2-)
+    JWT_SECRET=$(echo "$SECRETS" | grep "JWT_SECRET=" | cut -d'=' -f2-)
     API_TOKEN_SALT=$(echo "$SECRETS" | grep "API_TOKEN_SALT=" | cut -d'=' -f2-)
     TRANSFER_TOKEN_SALT=$(echo "$SECRETS" | grep "TRANSFER_TOKEN_SALT=" | cut -d'=' -f2-)
     
@@ -85,6 +86,7 @@ docker_image = "$DOCKER_IMAGE"
 # Strapi Secrets (generated automatically)
 app_keys            = "$APP_KEYS"
 admin_jwt_secret    = "$ADMIN_JWT_SECRET"
+jwt_secret          = "$JWT_SECRET"
 api_token_salt      = "$API_TOKEN_SALT"
 transfer_token_salt = "$TRANSFER_TOKEN_SALT"
 
@@ -137,6 +139,10 @@ fi
 
 if ! grep -q "^admin_jwt_secret" "$TFVARS_FILE" || [ -z "$(grep "^admin_jwt_secret" "$TFVARS_FILE" | cut -d'"' -f2)" ]; then
     MISSING_VARS+=("admin_jwt_secret")
+fi
+
+if ! grep -q "^jwt_secret" "$TFVARS_FILE" || [ -z "$(grep "^jwt_secret" "$TFVARS_FILE" | cut -d'"' -f2)" ]; then
+    MISSING_VARS+=("jwt_secret")
 fi
 
 if ! grep -q "^api_token_salt" "$TFVARS_FILE" || [ -z "$(grep "^api_token_salt" "$TFVARS_FILE" | cut -d'"' -f2)" ]; then

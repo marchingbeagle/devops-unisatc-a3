@@ -118,10 +118,38 @@ yarn-error.log
 coverage
 
 ############################
-# Strapi
+# Environment files
 ############################
 
 .env
+.env.*
+!.env.example
+!.env.template
+.env.local
+.env.development
+.env.production
+.env.test
+.env.staging
+
+############################
+# Terraform
+############################
+
+terraform.tfvars
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+############################
+# Strapi
+############################
+
 license.txt
 exports
 .strapi

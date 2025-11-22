@@ -70,6 +70,17 @@ variable "transfer_token_salt" {
   }
 }
 
+variable "jwt_secret" {
+  description = "Strapi JWT_SECRET for users-permissions plugin"
+  type        = string
+  sensitive   = true
+  
+  validation {
+    condition     = length(var.jwt_secret) > 0
+    error_message = "jwt_secret cannot be empty. Please provide a valid value."
+  }
+}
+
 variable "task_cpu" {
   description = "CPU units for ECS task"
   type        = number

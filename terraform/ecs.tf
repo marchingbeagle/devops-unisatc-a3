@@ -82,6 +82,10 @@ resource "aws_ecs_task_definition" "strapi" {
         {
           name      = "TRANSFER_TOKEN_SALT"
           valueFrom = aws_secretsmanager_secret.transfer_token_salt.arn
+        },
+        {
+          name      = "JWT_SECRET"
+          valueFrom = aws_secretsmanager_secret.jwt_secret.arn
         }
       ]
 
@@ -156,6 +160,18 @@ resource "aws_secretsmanager_secret_version" "transfer_token_salt" {
   secret_string = var.transfer_token_salt
 }
 
+resource "aws_secretsmanager_secret" "jwt_secret" {
+  name        = "${local.name_prefix}-jwt-secret"
+  description = "Strapi JWT_SECRET for users-permissions plugin"
+
+  tags = local.common_tags
+}
+
+resource "aws_secretsmanager_secret_version" "jwt_secret" {
+  secret_id     = aws_secretsmanager_secret.jwt_secret.id
+  secret_string = var.jwt_secret
+}
+
 # IAM policy to allow ECS tasks to read secrets
 resource "aws_iam_role_policy" "ecs_task_execution_secrets" {
   name = "${local.name_prefix}-ecs-task-execution-secrets"
@@ -174,7 +190,8 @@ resource "aws_iam_role_policy" "ecs_task_execution_secrets" {
           aws_secretsmanager_secret.app_keys.arn,
           aws_secretsmanager_secret.admin_jwt_secret.arn,
           aws_secretsmanager_secret.api_token_salt.arn,
-          aws_secretsmanager_secret.transfer_token_salt.arn
+          aws_secretsmanager_secret.transfer_token_salt.arn,
+          aws_secretsmanager_secret.jwt_secret.arn
         ]
       }
     ]
@@ -200,7 +217,8 @@ resource "aws_ecs_service" "strapi" {
     aws_secretsmanager_secret_version.app_keys,
     aws_secretsmanager_secret_version.admin_jwt_secret,
     aws_secretsmanager_secret_version.api_token_salt,
-    aws_secretsmanager_secret_version.transfer_token_salt
+    aws_secretsmanager_secret_version.transfer_token_salt,
+    aws_secretsmanager_secret_version.jwt_secret
   ]
 
   # Prevent issues with service updates

@@ -62,6 +62,7 @@ if [ -f "terraform.tfvars" ]; then
     ADMIN_JWT_SECRET=$(grep "^admin_jwt_secret" terraform.tfvars | cut -d'"' -f2 || echo "")
     API_TOKEN_SALT=$(grep "^api_token_salt" terraform.tfvars | cut -d'"' -f2 || echo "")
     TRANSFER_TOKEN_SALT=$(grep "^transfer_token_salt" terraform.tfvars | cut -d'"' -f2 || echo "")
+    JWT_SECRET=$(grep "^jwt_secret" terraform.tfvars | cut -d'"' -f2 || echo "")
     
     # Build terraform import command with variables
     TF_VARS="-var=\"docker_image=$DOCKER_IMAGE\""
@@ -69,6 +70,7 @@ if [ -f "terraform.tfvars" ]; then
     TF_VARS="$TF_VARS -var=\"admin_jwt_secret=$ADMIN_JWT_SECRET\""
     TF_VARS="$TF_VARS -var=\"api_token_salt=$API_TOKEN_SALT\""
     TF_VARS="$TF_VARS -var=\"transfer_token_salt=$TRANSFER_TOKEN_SALT\""
+    TF_VARS="$TF_VARS -var=\"jwt_secret=$JWT_SECRET\""
     TF_VARS="$TF_VARS -var=\"aws_region=$AWS_REGION\""
     TF_VARS="$TF_VARS -input=false"
 else
@@ -128,6 +130,11 @@ safe_import \
     "aws_secretsmanager_secret.transfer_token_salt" \
     "${NAME_PREFIX}-transfer-token-salt" \
     "Secrets Manager Secret (transfer_token_salt)"
+
+safe_import \
+    "aws_secretsmanager_secret.jwt_secret" \
+    "${NAME_PREFIX}-jwt-secret" \
+    "Secrets Manager Secret (jwt_secret)"
 
 # Get VPC ID for security group import
 echo -e "\n${YELLOW}Finding VPC and Security Group...${NC}"

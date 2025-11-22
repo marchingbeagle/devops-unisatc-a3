@@ -17,6 +17,7 @@ docker_image = "your-dockerhub-username/devops-strapi:latest"
 # Generate these using: node scripts/generate-secrets.js
 app_keys            = "key1,key2,key3,key4"
 admin_jwt_secret    = "your-admin-jwt-secret-here"
+jwt_secret          = "your-jwt-secret-here"
 api_token_salt      = "your-api-token-salt-here"
 transfer_token_salt = "your-transfer-token-salt-here"
 
