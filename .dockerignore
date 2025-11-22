@@ -23,5 +23,4 @@ playwright.config.ts
 .github
 terraform
 TODO.md
-pnpm-lock.yaml
 

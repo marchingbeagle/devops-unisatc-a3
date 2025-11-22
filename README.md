@@ -4,7 +4,7 @@ This project implements a complete DevOps pipeline for Strapi CMS with automated
 
 ## Prerequisites
 
-- Node.js 18+ 
+- Node.js 18+
 - pnpm (latest-10)
 - Docker
 - Terraform >= 1.0
@@ -12,9 +12,10 @@ This project implements a complete DevOps pipeline for Strapi CMS with automated
 
 ## 🔧 Setup Guide
 
-**New to Strapi, AWS, GitHub Actions, or Docker Hub?** 
+**New to Strapi, AWS, GitHub Actions, or Docker Hub?**
 
 👉 **See [SETUP_GUIDE.md](./SETUP_GUIDE.md) for a complete step-by-step guide** on how to:
+
 - Generate Strapi secrets
 - Create Docker Hub account and access tokens
 - Set up AWS credentials
@@ -22,6 +23,7 @@ This project implements a complete DevOps pipeline for Strapi CMS with automated
 - Set up local development environment
 
 You can also quickly generate Strapi secrets using:
+
 ```bash
 node scripts/generate-secrets.js
 ```
@@ -31,16 +33,19 @@ node scripts/generate-secrets.js
 ### Installation
 
 1. Install pnpm globally:
+
 ```bash
 npm install -g pnpm@latest-10
 ```
 
 2. Install dependencies:
+
 ```bash
 pnpm install
 ```
 
 3. Create a `.env` file with required environment variables:
+
 ```bash
 APP_KEYS=toBeModified1,toBeModified2,toBeModified3,toBeModified4
 ADMIN_JWT_SECRET=toBeModified
@@ -56,16 +61,19 @@ NODE_ENV=development
 ### Development
 
 Start your Strapi application with autoReload enabled:
+
 ```bash
 pnpm dev
 ```
 
 Start your Strapi application with autoReload disabled:
+
 ```bash
 pnpm start
 ```
 
 Build your admin panel:
+
 ```bash
 pnpm build
 ```
@@ -75,21 +83,25 @@ pnpm build
 ### Running E2E Tests Locally
 
 1. Start Strapi server:
+
 ```bash
 pnpm start
 ```
 
 2. In another terminal, run Playwright tests:
+
 ```bash
 pnpm test:e2e
 ```
 
 3. Run tests in UI mode:
+
 ```bash
 pnpm test:e2e:ui
 ```
 
 4. Run tests in headed mode (see browser):
+
 ```bash
 pnpm test:e2e:headed
 ```
@@ -97,6 +109,7 @@ pnpm test:e2e:headed
 ### Test Collections
 
 The project includes E2E tests for:
+
 - **Article Collection**: Create, Read, Update, Delete operations
 - **Author Collection**: Create, Read, Update, Delete operations, and author-article relationships
 
@@ -128,6 +141,7 @@ The project includes a complete CI/CD pipeline with three GitHub Actions workflo
 **Triggers:** Pull request events (opened, synchronize, reopened)
 
 **What it does:**
+
 - Checks out the code
 - Sets up Node.js 18 environment
 - Installs dependencies using pnpm
@@ -139,6 +153,7 @@ The project includes a complete CI/CD pipeline with three GitHub Actions workflo
 - Uploads test results and screenshots as artifacts
 
 **Artifacts:**
+
 - Test reports (HTML format)
 - Screenshots (on test failures)
 
@@ -147,6 +162,7 @@ The project includes a complete CI/CD pipeline with three GitHub Actions workflo
 **Triggers:** Push to `main` branch
 
 **What it does:**
+
 - Checks out the code
 - Sets up Docker Buildx
 - Logs in to Docker Hub
@@ -158,6 +174,7 @@ The project includes a complete CI/CD pipeline with three GitHub Actions workflo
 - Uses Docker layer caching for faster builds
 
 **Image Tags:**
+
 - Images are tagged with commit SHA for traceability
 - `latest` tag always points to the most recent build
 
@@ -166,6 +183,7 @@ The project includes a complete CI/CD pipeline with three GitHub Actions workflo
 **Triggers:** Push to `main` branch or manual workflow dispatch
 
 **What it does:**
+
 - Checks out the code
 - Configures AWS credentials
 - Sets up Terraform
@@ -182,6 +200,7 @@ The project includes a complete CI/CD pipeline with three GitHub Actions workflo
 - Outputs deployment information (cluster name, service name, URL, public IP)
 
 **Deployment Process:**
+
 1. Terraform creates/updates AWS infrastructure
 2. ECS service pulls the Docker image from Docker Hub
 3. New task starts with the updated image
@@ -189,6 +208,7 @@ The project includes a complete CI/CD pipeline with three GitHub Actions workflo
 5. Old task is stopped after new one is healthy
 
 **Workflow Execution:**
+
 - PR Checks workflow runs automatically on every PR
 - Docker Build and Deploy workflows run in parallel on push to `main`
 - Deploy workflow uses the `latest` Docker image tag (updated by Docker Build workflow)
@@ -201,21 +221,25 @@ The project includes a complete CI/CD pipeline with three GitHub Actions workflo
 Quick summary of required secrets:
 
 **Docker Hub:**
+
 - `DOCKER_USERNAME` - Your Docker Hub username
 - `DOCKER_PASSWORD` - Docker Hub password or access token
 
 **AWS:**
+
 - `AWS_ACCESS_KEY_ID` - AWS access key ID
 - `AWS_SECRET_ACCESS_KEY` - AWS secret access key
 - `AWS_REGION` - AWS region (optional, defaults to `us-east-1`)
 
 **Strapi Configuration:**
+
 - `STRAPI_APP_KEYS` - Comma-separated list of 4 app keys
 - `STRAPI_ADMIN_JWT_SECRET` - Admin JWT secret
 - `STRAPI_API_TOKEN_SALT` - API token salt
 - `STRAPI_TRANSFER_TOKEN_SALT` - Transfer token salt
 
 Generate Strapi secrets using:
+
 ```bash
 node scripts/generate-secrets.js
 ```
@@ -227,6 +251,7 @@ To demonstrate the CI/CD pipeline, create two pull requests:
 #### 1. Passing PR
 
 1. Create a new branch:
+
    ```bash
    git checkout -b feature/test-passing-pr
    ```
@@ -234,6 +259,7 @@ To demonstrate the CI/CD pipeline, create two pull requests:
 2. Make a small change (e.g., update README or add a comment)
 
 3. Commit and push:
+
    ```bash
    git add .
    git commit -m "Test: Passing PR"
@@ -247,20 +273,23 @@ To demonstrate the CI/CD pipeline, create two pull requests:
 #### 2. Failing PR
 
 1. Create a new branch:
+
    ```bash
    git checkout -b feature/test-failing-pr
    ```
 
 2. Modify a test to intentionally fail. For example, edit `tests/e2e/article.spec.ts`:
+
    ```typescript
    // Change this line:
-   expect(data.data.title).toBe('Test Article');
-   
+   expect(data.data.title).toBe("Test Article");
+
    // To this (wrong expected value):
-   expect(data.data.title).toBe('Wrong Title');
+   expect(data.data.title).toBe("Wrong Title");
    ```
 
 3. Commit and push:
+
    ```bash
    git add tests/e2e/article.spec.ts
    git commit -m "Test: Intentionally failing test"
@@ -276,11 +305,13 @@ To demonstrate the CI/CD pipeline, create two pull requests:
 After a successful deployment:
 
 1. **Check GitHub Actions output:**
+
    - Go to Actions tab in your repository
    - Click on the latest Deploy workflow run
    - Check the "Get deployment outputs" step for service URL and IP
 
 2. **Get deployment info via Terraform:**
+
    ```bash
    cd terraform
    terraform output service_url
@@ -288,11 +319,13 @@ After a successful deployment:
    ```
 
 3. **Access the deployed application:**
+
    - Use the public IP from Terraform outputs
    - Access Strapi admin at: `http://{public-ip}:1337/admin`
    - Login with: `admin@satc.edu.br` / `welcomeToStrapi123`
 
 4. **Check ECS service status:**
+
    ```bash
    aws ecs describe-services \
      --cluster devops-strapi-production-cluster \
@@ -315,16 +348,19 @@ After a successful deployment:
 ### Deploy Infrastructure
 
 1. Navigate to terraform directory:
+
 ```bash
 cd terraform
 ```
 
 2. Initialize Terraform:
+
 ```bash
 terraform init
 ```
 
 3. Review the plan:
+
 ```bash
 terraform plan \
   -var="docker_image=your-dockerhub-username/devops-strapi:latest" \
@@ -335,6 +371,7 @@ terraform plan \
 ```
 
 4. Apply the configuration:
+
 ```bash
 terraform apply
 ```
@@ -342,6 +379,7 @@ terraform apply
 ### Infrastructure Components
 
 The Terraform configuration creates:
+
 - ECS Fargate cluster and service (fixed at 1 task to minimize costs)
 - Application Load Balancer
 - Security groups for ALB and ECS tasks
@@ -354,6 +392,7 @@ The Terraform configuration creates:
 ### Outputs
 
 After deployment, Terraform outputs:
+
 - `cluster_name` - ECS cluster name
 - `service_name` - ECS service name
 - `load_balancer_url` - Load balancer URL
@@ -364,20 +403,24 @@ After deployment, Terraform outputs:
 The application comes with 3 pre-configured users:
 
 **Super Admin:**
+
 - Email: `admin@satc.edu.br`
 - Password: `welcomeToStrapi123`
 
 **Editor:**
+
 - Email: `editor@satc.edu.br`
 - Password: `welcomeToStrapi123`
 
 **Author:**
+
 - Email: `author@satc.edu.br`
 - Password: `welcomeToStrapi123`
 
 ## Collections
 
 The project includes 3 content types:
+
 - **Categoria** (Category)
 - **Autor** (Author)
 - **Article** (Article)
@@ -396,4 +439,5 @@ The project includes 3 content types:
 ```
 
 ---
+
 <sub>🤫 Psst! [Strapi is hiring](https://strapi.io/careers).</sub>

@@ -21,6 +21,7 @@ console.log('\nAPP_KEYS=' + appKeys.join(','));
 
 // Generate other secrets
 console.log('\nADMIN_JWT_SECRET=' + generateSecret(32));
+console.log('\nJWT_SECRET=' + generateSecret(32));
 console.log('\nAPI_TOKEN_SALT=' + generateSecret(32));
 console.log('\nTRANSFER_TOKEN_SALT=' + generateSecret(32));
 
