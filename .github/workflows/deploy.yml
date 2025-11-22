@@ -45,6 +45,53 @@ jobs:
         working-directory: ./terraform
         run: terraform init
 
+      - name: Import existing resources (if they exist)
+        working-directory: ./terraform
+        continue-on-error: true
+        run: |
+          # Resource name prefix (matches Terraform defaults: devops-strapi-production)
+          NAME_PREFIX="devops-strapi-production"
+          AWS_REGION="${{ secrets.AWS_REGION || 'us-east-1' }}"
+          
+          echo "Attempting to import existing resources (errors are expected for first-time deployments)..."
+          
+          # Function to safely import a resource
+          safe_import() {
+            local resource=$1
+            local identifier=$2
+            echo "Importing $resource..."
+            terraform import "$resource" "$identifier" 2>&1 || echo "  (Resource doesn't exist or already imported - this is OK)"
+          }
+          
+          # Import CloudWatch Log Group
+          safe_import aws_cloudwatch_log_group.strapi "/ecs/${NAME_PREFIX}"
+          
+          # Import Secrets Manager secrets
+          safe_import aws_secretsmanager_secret.app_keys "${NAME_PREFIX}-app-keys"
+          safe_import aws_secretsmanager_secret.admin_jwt_secret "${NAME_PREFIX}-admin-jwt-secret"
+          safe_import aws_secretsmanager_secret.api_token_salt "${NAME_PREFIX}-api-token-salt"
+          safe_import aws_secretsmanager_secret.transfer_token_salt "${NAME_PREFIX}-transfer-token-salt"
+          
+          # Get VPC ID for security group import
+          VPC_ID=$(aws ec2 describe-vpcs --filters "Name=isDefault,Values=true" --query "Vpcs[0].VpcId" --output text --region "${AWS_REGION}" 2>/dev/null || echo "")
+          if [ -n "$VPC_ID" ] && [ "$VPC_ID" != "None" ]; then
+            # Get security group ID by name
+            SG_ID=$(aws ec2 describe-security-groups \
+              --filters "Name=group-name,Values=${NAME_PREFIX}-ecs-tasks-sg" "Name=vpc-id,Values=${VPC_ID}" \
+              --query "SecurityGroups[0].GroupId" \
+              --output text \
+              --region "${AWS_REGION}" 2>/dev/null || echo "")
+            if [ -n "$SG_ID" ] && [ "$SG_ID" != "None" ]; then
+              safe_import aws_security_group.ecs_tasks "${SG_ID}"
+            fi
+          fi
+          
+          # Import IAM Roles
+          safe_import aws_iam_role.ecs_task_execution "${NAME_PREFIX}-ecs-task-execution-role"
+          safe_import aws_iam_role.ecs_task "${NAME_PREFIX}-ecs-task-role"
+          
+          echo "Import step completed"
+
       - name: Terraform Plan
         working-directory: ./terraform
         run: |
