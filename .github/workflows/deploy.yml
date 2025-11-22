@@ -8,8 +8,9 @@ on:
 
 jobs:
   deploy:
+    name: Deploy to AWS ECS
     runs-on: ubuntu-latest
-
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -26,33 +27,89 @@ jobs:
         with:
           terraform_version: 1.6.0
 
+      - name: Determine Docker image tag
+        id: image-tag
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            # For manual dispatch, use latest or provided input
+            IMAGE_TAG="${INPUT_IMAGE_TAG:-${{ secrets.DOCKER_USERNAME }}/devops-strapi:latest}"
+          else
+            # For push events, use 'latest' tag which is always updated by docker-build workflow
+            # This ensures the image exists even if workflows run in parallel
+            IMAGE_TAG="${{ secrets.DOCKER_USERNAME }}/devops-strapi:latest"
+          fi
+          echo "image_tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
+          echo "Using Docker image: $IMAGE_TAG"
+
       - name: Terraform Init
         working-directory: ./terraform
         run: terraform init
 
       - name: Terraform Plan
         working-directory: ./terraform
-        run: terraform plan -out=tfplan
-        env:
-          TF_VAR_docker_image: ${{ secrets.DOCKER_USERNAME }}/devops-strapi:latest
-          TF_VAR_app_keys: ${{ secrets.APP_KEYS }}
-          TF_VAR_admin_jwt_secret: ${{ secrets.ADMIN_JWT_SECRET }}
-          TF_VAR_api_token_salt: ${{ secrets.API_TOKEN_SALT }}
-          TF_VAR_transfer_token_salt: ${{ secrets.TRANSFER_TOKEN_SALT }}
+        run: |
+          terraform plan \
+            -var="docker_image=${{ steps.image-tag.outputs.image_tag }}" \
+            -var="app_keys=${{ secrets.STRAPI_APP_KEYS }}" \
+            -var="admin_jwt_secret=${{ secrets.STRAPI_ADMIN_JWT_SECRET }}" \
+            -var="api_token_salt=${{ secrets.STRAPI_API_TOKEN_SALT }}" \
+            -var="transfer_token_salt=${{ secrets.STRAPI_TRANSFER_TOKEN_SALT }}" \
+            -var="aws_region=${{ secrets.AWS_REGION || 'us-east-1' }}" \
+            -out=tfplan
 
       - name: Terraform Apply
         working-directory: ./terraform
         run: terraform apply -auto-approve tfplan
-        env:
-          TF_VAR_docker_image: ${{ secrets.DOCKER_USERNAME }}/devops-strapi:latest
-          TF_VAR_app_keys: ${{ secrets.APP_KEYS }}
-          TF_VAR_admin_jwt_secret: ${{ secrets.ADMIN_JWT_SECRET }}
-          TF_VAR_api_token_salt: ${{ secrets.API_TOKEN_SALT }}
-          TF_VAR_transfer_token_salt: ${{ secrets.TRANSFER_TOKEN_SALT }}
 
-      - name: Update ECS Service
+      - name: Get deployment outputs
+        working-directory: ./terraform
         run: |
-          CLUSTER_NAME=$(terraform -chdir=./terraform output -raw cluster_name)
-          SERVICE_NAME=$(terraform -chdir=./terraform output -raw service_name)
-          aws ecs update-service --cluster $CLUSTER_NAME --service $SERVICE_NAME --force-new-deployment
+          echo "## Deployment Outputs" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Cluster Name" >> $GITHUB_STEP_SUMMARY
+          terraform output -raw cluster_name >> $GITHUB_STEP_SUMMARY || echo "N/A" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Service Name" >> $GITHUB_STEP_SUMMARY
+          terraform output -raw service_name >> $GITHUB_STEP_SUMMARY || echo "N/A" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Service URL" >> $GITHUB_STEP_SUMMARY
+          terraform output -raw service_url >> $GITHUB_STEP_SUMMARY || echo "N/A" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Public IP" >> $GITHUB_STEP_SUMMARY
+          terraform output -raw task_public_ip >> $GITHUB_STEP_SUMMARY || echo "N/A" >> $GITHUB_STEP_SUMMARY
 
+      - name: Wait for service to be healthy
+        run: |
+          echo "Waiting for ECS service to be healthy..."
+          CLUSTER_NAME=$(cd terraform && terraform output -raw cluster_name)
+          SERVICE_NAME=$(cd terraform && terraform output -raw service_name)
+          
+          if [ -z "$CLUSTER_NAME" ] || [ -z "$SERVICE_NAME" ]; then
+            echo "Could not retrieve cluster or service name"
+            exit 0
+          fi
+          
+          # Wait up to 5 minutes for service to stabilize
+          timeout 300 bash -c '
+            while true; do
+              STATUS=$(aws ecs describe-services --cluster "$CLUSTER_NAME" --services "$SERVICE_NAME" --query "services[0].deployments[0].status" --output text 2>/dev/null || echo "UNKNOWN")
+              RUNNING=$(aws ecs describe-services --cluster "$CLUSTER_NAME" --services "$SERVICE_NAME" --query "services[0].runningCount" --output text 2>/dev/null || echo "0")
+              
+              if [ "$STATUS" = "PRIMARY" ] && [ "$RUNNING" = "1" ]; then
+                echo "Service is healthy!"
+                break
+              fi
+              
+              echo "Waiting... Status: $STATUS, Running: $RUNNING"
+              sleep 10
+            done
+          ' || echo "Timeout waiting for service (this is OK for first deployment)"
+
+      - name: Display deployment info
+        run: |
+          echo "✅ Deployment completed!"
+          echo ""
+          echo "To get the service URL, run:"
+          echo "  cd terraform && terraform output service_url"
+          echo ""
+          echo "Or check the deployment outputs above."

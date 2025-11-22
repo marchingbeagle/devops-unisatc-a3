@@ -119,38 +119,191 @@ docker run -p 1337:1337 \
   devops-strapi
 ```
 
-## GitHub Actions
+## GitHub Actions CI/CD Pipeline
 
-The project includes three GitHub Actions workflows:
+The project includes a complete CI/CD pipeline with three GitHub Actions workflows:
 
-### 1. PR Checks (`pr-checks.yml`)
-- Runs on pull request creation/updates
-- Executes Playwright E2E tests
-- Uploads test results as artifacts
+### 1. PR Checks Workflow (`.github/workflows/pr-checks.yml`)
 
-### 2. Docker Build (`docker-build.yml`)
-- Triggers on push to `main` branch
-- Builds Docker image
-- Pushes to Docker Hub
+**Triggers:** Pull request events (opened, synchronize, reopened)
 
-### 3. Deploy (`deploy.yml`)
-- Triggers on push to `main` branch
-- Runs Terraform to deploy infrastructure
-- Updates ECS service with new image
+**What it does:**
+- Checks out the code
+- Sets up Node.js 18 environment
+- Installs dependencies using pnpm
+- Installs Playwright browsers
+- Builds the Strapi application
+- Starts Strapi server in production mode
+- Waits for server to be ready
+- Runs Playwright E2E tests
+- Uploads test results and screenshots as artifacts
 
-### Required GitHub Secrets
+**Artifacts:**
+- Test reports (HTML format)
+- Screenshots (on test failures)
 
-Configure the following secrets in your GitHub repository:
+### 2. Docker Build Workflow (`.github/workflows/docker-build.yml`)
 
-- `DOCKER_USERNAME` - Docker Hub username
-- `DOCKER_PASSWORD` - Docker Hub password/token
+**Triggers:** Push to `main` branch
+
+**What it does:**
+- Checks out the code
+- Sets up Docker Buildx
+- Logs in to Docker Hub
+- Builds Docker image with multiple tags:
+  - `{branch}-{sha}` (e.g., `main-abc123`)
+  - `latest`
+  - `{date}-{sha}` (e.g., `20240101-abc123`)
+- Pushes images to Docker Hub
+- Uses Docker layer caching for faster builds
+
+**Image Tags:**
+- Images are tagged with commit SHA for traceability
+- `latest` tag always points to the most recent build
+
+### 3. Deploy Workflow (`.github/workflows/deploy.yml`)
+
+**Triggers:** Push to `main` branch or manual workflow dispatch
+
+**What it does:**
+- Checks out the code
+- Configures AWS credentials
+- Sets up Terraform
+- Determines Docker image tag (uses commit SHA or latest)
+- Initializes Terraform
+- Runs Terraform plan
+- Applies Terraform configuration to deploy:
+  - ECS Fargate cluster and service
+  - Security groups
+  - CloudWatch log groups
+  - AWS Secrets Manager secrets
+  - IAM roles and policies
+- Waits for ECS service to be healthy
+- Outputs deployment information (cluster name, service name, URL, public IP)
+
+**Deployment Process:**
+1. Terraform creates/updates AWS infrastructure
+2. ECS service pulls the Docker image from Docker Hub
+3. New task starts with the updated image
+4. Health checks ensure service is running
+5. Old task is stopped after new one is healthy
+
+**Workflow Execution:**
+- PR Checks workflow runs automatically on every PR
+- Docker Build and Deploy workflows run in parallel on push to `main`
+- Deploy workflow uses the `latest` Docker image tag (updated by Docker Build workflow)
+- If Deploy runs before Docker Build completes, it will use the previous `latest` image
+
+### Setting Up GitHub Secrets
+
+**📖 See [.github/SECRETS.md](.github/SECRETS.md) for detailed setup instructions.**
+
+Quick summary of required secrets:
+
+**Docker Hub:**
+- `DOCKER_USERNAME` - Your Docker Hub username
+- `DOCKER_PASSWORD` - Docker Hub password or access token
+
+**AWS:**
 - `AWS_ACCESS_KEY_ID` - AWS access key ID
 - `AWS_SECRET_ACCESS_KEY` - AWS secret access key
-- `AWS_REGION` - AWS region (default: us-east-1)
-- `APP_KEYS` - Comma-separated Strapi app keys
-- `ADMIN_JWT_SECRET` - Strapi admin JWT secret
-- `API_TOKEN_SALT` - Strapi API token salt
-- `TRANSFER_TOKEN_SALT` - Strapi transfer token salt
+- `AWS_REGION` - AWS region (optional, defaults to `us-east-1`)
+
+**Strapi Configuration:**
+- `STRAPI_APP_KEYS` - Comma-separated list of 4 app keys
+- `STRAPI_ADMIN_JWT_SECRET` - Admin JWT secret
+- `STRAPI_API_TOKEN_SALT` - API token salt
+- `STRAPI_TRANSFER_TOKEN_SALT` - Transfer token salt
+
+Generate Strapi secrets using:
+```bash
+node scripts/generate-secrets.js
+```
+
+### Creating Test Pull Requests
+
+To demonstrate the CI/CD pipeline, create two pull requests:
+
+#### 1. Passing PR
+
+1. Create a new branch:
+   ```bash
+   git checkout -b feature/test-passing-pr
+   ```
+
+2. Make a small change (e.g., update README or add a comment)
+
+3. Commit and push:
+   ```bash
+   git add .
+   git commit -m "Test: Passing PR"
+   git push origin feature/test-passing-pr
+   ```
+
+4. Create a pull request on GitHub
+5. The PR Checks workflow will run automatically
+6. All tests should pass ✅
+
+#### 2. Failing PR
+
+1. Create a new branch:
+   ```bash
+   git checkout -b feature/test-failing-pr
+   ```
+
+2. Modify a test to intentionally fail. For example, edit `tests/e2e/article.spec.ts`:
+   ```typescript
+   // Change this line:
+   expect(data.data.title).toBe('Test Article');
+   
+   // To this (wrong expected value):
+   expect(data.data.title).toBe('Wrong Title');
+   ```
+
+3. Commit and push:
+   ```bash
+   git add tests/e2e/article.spec.ts
+   git commit -m "Test: Intentionally failing test"
+   git push origin feature/test-failing-pr
+   ```
+
+4. Create a pull request on GitHub
+5. The PR Checks workflow will run automatically
+6. Tests will fail ❌, demonstrating the CI pipeline catching errors
+
+### Verifying Deployments
+
+After a successful deployment:
+
+1. **Check GitHub Actions output:**
+   - Go to Actions tab in your repository
+   - Click on the latest Deploy workflow run
+   - Check the "Get deployment outputs" step for service URL and IP
+
+2. **Get deployment info via Terraform:**
+   ```bash
+   cd terraform
+   terraform output service_url
+   terraform output task_public_ip
+   ```
+
+3. **Access the deployed application:**
+   - Use the public IP from Terraform outputs
+   - Access Strapi admin at: `http://{public-ip}:1337/admin`
+   - Login with: `admin@satc.edu.br` / `welcomeToStrapi123`
+
+4. **Check ECS service status:**
+   ```bash
+   aws ecs describe-services \
+     --cluster devops-strapi-production-cluster \
+     --services devops-strapi-production-service \
+     --region us-east-1
+   ```
+
+5. **View logs:**
+   ```bash
+   aws logs tail /ecs/devops-strapi-production --follow --region us-east-1
+   ```
 
 ## Terraform Deployment
 

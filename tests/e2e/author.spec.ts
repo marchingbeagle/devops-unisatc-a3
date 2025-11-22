@@ -1,4 +1,10 @@
 import { test, expect } from '@playwright/test';
+import {
+  adminLogin,
+  getResourceWithRetry,
+  updateResourceWithRetry,
+  createAndPublishArticle,
+} from './helpers';
 
 const ADMIN_EMAIL = 'admin@satc.edu.br';
 const ADMIN_PASSWORD = 'welcomeToStrapi123';
@@ -10,30 +16,24 @@ test.describe('Author Collection E2E Tests', () => {
   let authorId: number;
 
   test.beforeAll(async ({ request }) => {
-    // Login to get admin authentication token
-    const loginResponse = await request.post(`${BASE_URL}/admin/login`, {
-      data: {
-        email: ADMIN_EMAIL,
-        password: ADMIN_PASSWORD,
-      },
-    });
+    // Add a longer delay to avoid rate limiting issues
+    await new Promise(resolve => setTimeout(resolve, 2000));
 
-    expect(loginResponse.ok()).toBeTruthy();
-    const loginData = await loginResponse.json();
-    authToken = loginData.data.token;
+    // Login to get admin authentication token with exponential backoff retry
+    authToken = await adminLogin(request, ADMIN_EMAIL, ADMIN_PASSWORD);
 
     // Try to create an API token for API requests
     // Fallback to admin token if API token creation fails
     try {
       const tokenResponse = await request.post(
-        `${BASE_URL}/admin/content-manager/collection-types/admin::api-token`,
+        `${BASE_URL}/admin/api-tokens`,
         {
           headers: {
-            Authorization: `Bearer ${apiToken}`,
+            Authorization: `Bearer ${authToken}`,
             'Content-Type': 'application/json',
           },
           data: {
-            name: 'E2E Test Token',
+            name: `E2E Test Token ${Date.now()}`,
             type: 'full-access',
             lifespan: null,
           },
@@ -42,12 +42,16 @@ test.describe('Author Collection E2E Tests', () => {
 
       if (tokenResponse.ok()) {
         const tokenData = await tokenResponse.json();
-        apiToken = tokenData.accessKey || authToken;
+        apiToken = tokenData.data?.accessKey || tokenData.accessKey || authToken;
+        console.log('API token created successfully');
       } else {
+        const errorText = await tokenResponse.text();
+        console.warn(`API token creation failed:`, tokenResponse.status(), errorText);
         apiToken = authToken;
       }
-    } catch {
+    } catch (e) {
       // Fallback to admin token
+      console.warn('API token creation exception:', e);
       apiToken = authToken;
     }
   });
@@ -90,53 +94,74 @@ test.describe('Author Collection E2E Tests', () => {
   });
 
   test('should read a specific author', async ({ request }) => {
-    if (!authorId) {
-      // Create an author if we don't have one
-      const createResponse = await request.post(`${BASE_URL}/api/authors`, {
-        headers: {
-          Authorization: `Bearer ${apiToken}`,
-          'Content-Type': 'application/json',
-        },
-        data: {
-          data: {
-            name: 'Jane Smith',
-            email: 'jane.smith@example.com',
-          },
-        },
-      });
-      const createData = await createResponse.json();
-      authorId = createData.data.id;
-    }
-
-    const response = await request.get(`${BASE_URL}/api/authors/${authorId}`, {
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
+    // Always create a new author for this test to ensure isolation
+    const createResponse = await request.post(`${BASE_URL}/api/authors`, {
       headers: {
         Authorization: `Bearer ${apiToken}`,
+        'Content-Type': 'application/json',
+      },
+      data: {
+        data: {
+          name: 'Jane Smith',
+          email: 'jane.smith@example.com',
+        },
       },
     });
+    
+    if (!createResponse.ok()) {
+      const errorText = await createResponse.text();
+      console.error(`POST /api/authors failed:`, createResponse.status(), errorText);
+    }
+    expect(createResponse.ok()).toBeTruthy();
+    const createData = await createResponse.json();
+    const testAuthorId = createData.data.id;
+    expect(testAuthorId).toBeDefined();
 
-    expect(response.ok()).toBeTruthy();
-    const data = await response.json();
+    // Wait a bit for the author to be available
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
+    // Use retry logic to read the author
+    const data = await getResourceWithRetry(
+      request,
+      `${BASE_URL}/api/authors/${testAuthorId}`,
+      apiToken
+    );
+    
     expect(data.data).toBeDefined();
-    expect(data.data.id).toBe(authorId);
+    expect(data.data.id).toBe(testAuthorId);
+    expect(data.data.name).toBe('Jane Smith');
   });
 
   test('should update an author', async ({ request }) => {
-    if (!authorId) {
-      const createResponse = await request.post(`${BASE_URL}/api/authors`, {
-        headers: {
-          Authorization: `Bearer ${apiToken}`,
-          'Content-Type': 'application/json',
-        },
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
+    // Always create a new author for this test to ensure isolation
+    const createResponse = await request.post(`${BASE_URL}/api/authors`, {
+      headers: {
+        Authorization: `Bearer ${apiToken}`,
+        'Content-Type': 'application/json',
+      },
+      data: {
         data: {
-          data: {
-            name: 'Original Name',
-            email: 'original@example.com',
-          },
+          name: 'Original Name',
+          email: 'original@example.com',
         },
-      });
-      const createData = await createResponse.json();
-      authorId = createData.data.id;
+      },
+    });
+    
+    if (!createResponse.ok()) {
+      const errorText = await createResponse.text();
+      console.error(`POST /api/authors failed:`, createResponse.status(), errorText);
     }
+    expect(createResponse.ok()).toBeTruthy();
+    const createData = await createResponse.json();
+    const testAuthorId = createData.data.id;
+    expect(testAuthorId).toBeDefined();
+
+    // Wait a bit for the author to be available before updating
+    await new Promise(resolve => setTimeout(resolve, 500));
 
     const updatedData = {
       data: {
@@ -145,16 +170,15 @@ test.describe('Author Collection E2E Tests', () => {
       },
     };
 
-    const response = await request.put(`${BASE_URL}/api/authors/${authorId}`, {
-      headers: {
-        Authorization: `Bearer ${apiToken}`,
-        'Content-Type': 'application/json',
-      },
-      data: updatedData,
-    });
-
-    expect(response.ok()).toBeTruthy();
-    const data = await response.json();
+    // Use retry logic to update the author
+    const data = await updateResourceWithRetry(
+      request,
+      `${BASE_URL}/api/authors/${testAuthorId}`,
+      apiToken,
+      updatedData
+    );
+    
+    expect(data.data).toBeDefined();
     expect(data.data.name).toBe('Updated Author Name');
     expect(data.data.email).toBe('updated@example.com');
   });
@@ -210,35 +234,42 @@ test.describe('Author Collection E2E Tests', () => {
     const authorData = await authorResponse.json();
     const testAuthorId = authorData.data.id;
 
-    // Create an article with the author
-    const articleResponse = await request.post(`${BASE_URL}/api/articles`, {
-      headers: {
-        Authorization: `Bearer ${apiToken}`,
-        'Content-Type': 'application/json',
-      },
-      data: {
-        data: {
-          title: 'Article with Author',
-          description: 'Testing author relationship',
-          author: testAuthorId,
-          publishedAt: new Date().toISOString(),
-        },
-      },
+    // Wait for author to be available
+    await new Promise(resolve => setTimeout(resolve, 500));
+
+    // Create and publish an article with the author
+    const articleId = await createAndPublishArticle(request, apiToken, {
+      title: 'Article with Author',
+      description: 'Testing author relationship',
     });
 
-    expect(articleResponse.ok()).toBeTruthy();
-    const articleData = await articleResponse.json();
+    // Update the article to set the author relationship
+    await updateResourceWithRetry(
+      request,
+      `${BASE_URL}/api/articles/${articleId}`,
+      apiToken,
+      {
+        data: {
+          author: testAuthorId,
+        },
+      }
+    );
+
+    // Verify article has the author
+    const articleData = await getResourceWithRetry(
+      request,
+      `${BASE_URL}/api/articles/${articleId}?populate=author`,
+      apiToken
+    );
     expect(articleData.data.author).toBeDefined();
     expect(articleData.data.author.id).toBe(testAuthorId);
 
     // Verify author has the article in its articles relation
-    const authorGetResponse = await request.get(`${BASE_URL}/api/authors/${testAuthorId}?populate=articles`, {
-      headers: {
-        Authorization: `Bearer ${apiToken}`,
-      },
-    });
-    expect(authorGetResponse.ok()).toBeTruthy();
-    const authorWithArticles = await authorGetResponse.json();
+    const authorWithArticles = await getResourceWithRetry(
+      request,
+      `${BASE_URL}/api/authors/${testAuthorId}?populate=articles`,
+      apiToken
+    );
     expect(authorWithArticles.data.articles).toBeDefined();
   });
 });

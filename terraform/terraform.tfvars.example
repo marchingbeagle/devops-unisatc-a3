@@ -1,0 +1,27 @@
+# Example Terraform variables file
+# Copy this file to terraform.tfvars and fill in your values
+# DO NOT commit terraform.tfvars to version control!
+
+# AWS Configuration
+aws_region = "us-east-1"
+
+# Application Configuration
+app_name     = "devops-strapi"
+environment  = "production"
+
+# Docker Image
+# This will be set automatically by GitHub Actions, but you can override it here for local testing
+docker_image = "your-dockerhub-username/devops-strapi:latest"
+
+# Strapi Secrets
+# Generate these using: node scripts/generate-secrets.js
+app_keys            = "key1,key2,key3,key4"
+admin_jwt_secret    = "your-admin-jwt-secret-here"
+api_token_salt      = "your-api-token-salt-here"
+transfer_token_salt = "your-transfer-token-salt-here"
+
+# ECS Task Configuration (optional - defaults shown)
+task_cpu     = 512
+task_memory  = 1024
+desired_count = 1
+
