@@ -1,0 +1,60 @@
+name: PR Checks
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'pnpm'
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: latest-10
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Start Strapi server
+        run: |
+          pnpm start &
+          sleep 30
+        env:
+          APP_KEYS: ${{ secrets.APP_KEYS || 'toBeModified1,toBeModified2,toBeModified3,toBeModified4' }}
+          ADMIN_JWT_SECRET: ${{ secrets.ADMIN_JWT_SECRET || 'toBeModified' }}
+          API_TOKEN_SALT: ${{ secrets.API_TOKEN_SALT || 'toBeModified' }}
+          TRANSFER_TOKEN_SALT: ${{ secrets.TRANSFER_TOKEN_SALT || 'toBeModified' }}
+          NODE_ENV: production
+
+      - name: Wait for Strapi to be ready
+        run: |
+          timeout 120 bash -c 'until curl -f http://localhost:1337/admin; do sleep 2; done'
+
+      - name: Run Playwright tests
+        run: pnpm test:e2e
+        env:
+          BASE_URL: http://localhost:1337
+          CI: true
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 30
+

@@ -1,0 +1,58 @@
+name: Deploy to AWS ECS
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.0
+
+      - name: Terraform Init
+        working-directory: ./terraform
+        run: terraform init
+
+      - name: Terraform Plan
+        working-directory: ./terraform
+        run: terraform plan -out=tfplan
+        env:
+          TF_VAR_docker_image: ${{ secrets.DOCKER_USERNAME }}/devops-strapi:latest
+          TF_VAR_app_keys: ${{ secrets.APP_KEYS }}
+          TF_VAR_admin_jwt_secret: ${{ secrets.ADMIN_JWT_SECRET }}
+          TF_VAR_api_token_salt: ${{ secrets.API_TOKEN_SALT }}
+          TF_VAR_transfer_token_salt: ${{ secrets.TRANSFER_TOKEN_SALT }}
+
+      - name: Terraform Apply
+        working-directory: ./terraform
+        run: terraform apply -auto-approve tfplan
+        env:
+          TF_VAR_docker_image: ${{ secrets.DOCKER_USERNAME }}/devops-strapi:latest
+          TF_VAR_app_keys: ${{ secrets.APP_KEYS }}
+          TF_VAR_admin_jwt_secret: ${{ secrets.ADMIN_JWT_SECRET }}
+          TF_VAR_api_token_salt: ${{ secrets.API_TOKEN_SALT }}
+          TF_VAR_transfer_token_salt: ${{ secrets.TRANSFER_TOKEN_SALT }}
+
+      - name: Update ECS Service
+        run: |
+          CLUSTER_NAME=$(terraform -chdir=./terraform output -raw cluster_name)
+          SERVICE_NAME=$(terraform -chdir=./terraform output -raw service_name)
+          aws ecs update-service --cluster $CLUSTER_NAME --service $SERVICE_NAME --force-new-deployment
+
