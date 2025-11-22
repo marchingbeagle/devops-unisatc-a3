@@ -69,6 +69,57 @@ jobs:
           
           echo "✅ All required secrets are configured"
 
+      - name: Restore deleted secrets (if scheduled for deletion)
+        continue-on-error: true
+        run: |
+          NAME_PREFIX="devops-strapi-production"
+          AWS_REGION="${{ secrets.AWS_REGION || 'us-east-1' }}"
+          
+          echo "Checking for secrets scheduled for deletion..."
+          
+          # Function to restore a secret if it's scheduled for deletion
+          restore_secret_if_needed() {
+            local secret_name=$1
+            local secret_value=$2
+            echo "Checking secret: $secret_name"
+            
+            # Check if secret exists and is scheduled for deletion
+            SECRET_STATUS=$(aws secretsmanager describe-secret \
+              --secret-id "$secret_name" \
+              --region "${AWS_REGION}" \
+              --query 'DeletedDate' \
+              --output text 2>/dev/null || echo "NOT_FOUND")
+            
+            if [ "$SECRET_STATUS" != "None" ] && [ "$SECRET_STATUS" != "NOT_FOUND" ] && [ -n "$SECRET_STATUS" ]; then
+              echo "  Secret $secret_name is scheduled for deletion, restoring..."
+              if aws secretsmanager restore-secret \
+                --secret-id "$secret_name" \
+                --region "${AWS_REGION}" 2>&1; then
+                echo "  ✅ Restored $secret_name"
+                # Update the secret value after restoration
+                if [ -n "$secret_value" ]; then
+                  echo "  Updating secret value..."
+                  aws secretsmanager put-secret-value \
+                    --secret-id "$secret_name" \
+                    --secret-string "$secret_value" \
+                    --region "${AWS_REGION}" 2>&1 && echo "  ✅ Updated secret value" || echo "  ⚠️  Could not update secret value"
+                fi
+              else
+                echo "  ⚠️  Could not restore $secret_name (may already be restored)"
+              fi
+            else
+              echo "  Secret $secret_name is not scheduled for deletion"
+            fi
+          }
+          
+          # Restore secrets if needed
+          restore_secret_if_needed "${NAME_PREFIX}-app-keys" "${{ secrets.APP_KEYS }}"
+          restore_secret_if_needed "${NAME_PREFIX}-admin-jwt-secret" "${{ secrets.ADMIN_JWT_SECRET }}"
+          restore_secret_if_needed "${NAME_PREFIX}-api-token-salt" "${{ secrets.API_TOKEN_SALT }}"
+          restore_secret_if_needed "${NAME_PREFIX}-transfer-token-salt" "${{ secrets.TRANSFER_TOKEN_SALT }}"
+          
+          echo "Secret restoration check completed"
+
       - name: Terraform Init
         working-directory: ./terraform
         run: terraform init
