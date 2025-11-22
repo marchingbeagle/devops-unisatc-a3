@@ -46,17 +46,17 @@ jobs:
           echo "Validating required secrets..."
           MISSING_SECRETS=()
           
-          if [ -z "${{ secrets.STRAPI_APP_KEYS }}" ]; then
-            MISSING_SECRETS+=("STRAPI_APP_KEYS")
+          if [ -z "${{ secrets.APP_KEYS }}" ]; then
+            MISSING_SECRETS+=("APP_KEYS")
           fi
-          if [ -z "${{ secrets.STRAPI_ADMIN_JWT_SECRET }}" ]; then
-            MISSING_SECRETS+=("STRAPI_ADMIN_JWT_SECRET")
+          if [ -z "${{ secrets.ADMIN_JWT_SECRET }}" ]; then
+            MISSING_SECRETS+=("ADMIN_JWT_SECRET")
           fi
-          if [ -z "${{ secrets.STRAPI_API_TOKEN_SALT }}" ]; then
-            MISSING_SECRETS+=("STRAPI_API_TOKEN_SALT")
+          if [ -z "${{ secrets.API_TOKEN_SALT }}" ]; then
+            MISSING_SECRETS+=("API_TOKEN_SALT")
           fi
-          if [ -z "${{ secrets.STRAPI_TRANSFER_TOKEN_SALT }}" ]; then
-            MISSING_SECRETS+=("STRAPI_TRANSFER_TOKEN_SALT")
+          if [ -z "${{ secrets.TRANSFER_TOKEN_SALT }}" ]; then
+            MISSING_SECRETS+=("TRANSFER_TOKEN_SALT")
           fi
           
           if [ ${#MISSING_SECRETS[@]} -gt 0 ]; then
@@ -90,10 +90,10 @@ jobs:
             echo "Importing $resource..."
             terraform import \
               -var="docker_image=${{ steps.image-tag.outputs.image_tag }}" \
-              -var="app_keys=${{ secrets.STRAPI_APP_KEYS }}" \
-              -var="admin_jwt_secret=${{ secrets.STRAPI_ADMIN_JWT_SECRET }}" \
-              -var="api_token_salt=${{ secrets.STRAPI_API_TOKEN_SALT }}" \
-              -var="transfer_token_salt=${{ secrets.STRAPI_TRANSFER_TOKEN_SALT }}" \
+              -var="app_keys=${{ secrets.APP_KEYS }}" \
+              -var="admin_jwt_secret=${{ secrets.ADMIN_JWT_SECRET }}" \
+              -var="api_token_salt=${{ secrets.API_TOKEN_SALT }}" \
+              -var="transfer_token_salt=${{ secrets.TRANSFER_TOKEN_SALT }}" \
               -var="aws_region=${{ secrets.AWS_REGION || 'us-east-1' }}" \
               -input=false \
               "$resource" "$identifier" 2>&1 || echo "  (Resource doesn't exist or already imported - this is OK)"
@@ -133,10 +133,10 @@ jobs:
         run: |
           terraform plan \
             -var="docker_image=${{ steps.image-tag.outputs.image_tag }}" \
-            -var="app_keys=${{ secrets.STRAPI_APP_KEYS }}" \
-            -var="admin_jwt_secret=${{ secrets.STRAPI_ADMIN_JWT_SECRET }}" \
-            -var="api_token_salt=${{ secrets.STRAPI_API_TOKEN_SALT }}" \
-            -var="transfer_token_salt=${{ secrets.STRAPI_TRANSFER_TOKEN_SALT }}" \
+            -var="app_keys=${{ secrets.APP_KEYS }}" \
+            -var="admin_jwt_secret=${{ secrets.ADMIN_JWT_SECRET }}" \
+            -var="api_token_salt=${{ secrets.API_TOKEN_SALT }}" \
+            -var="transfer_token_salt=${{ secrets.TRANSFER_TOKEN_SALT }}" \
             -var="aws_region=${{ secrets.AWS_REGION || 'us-east-1' }}" \
             -out=tfplan
 
