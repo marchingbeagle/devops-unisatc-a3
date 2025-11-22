@@ -41,6 +41,34 @@ jobs:
           echo "image_tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
           echo "Using Docker image: $IMAGE_TAG"
 
+      - name: Validate required secrets
+        run: |
+          echo "Validating required secrets..."
+          MISSING_SECRETS=()
+          
+          if [ -z "${{ secrets.STRAPI_APP_KEYS }}" ]; then
+            MISSING_SECRETS+=("STRAPI_APP_KEYS")
+          fi
+          if [ -z "${{ secrets.STRAPI_ADMIN_JWT_SECRET }}" ]; then
+            MISSING_SECRETS+=("STRAPI_ADMIN_JWT_SECRET")
+          fi
+          if [ -z "${{ secrets.STRAPI_API_TOKEN_SALT }}" ]; then
+            MISSING_SECRETS+=("STRAPI_API_TOKEN_SALT")
+          fi
+          if [ -z "${{ secrets.STRAPI_TRANSFER_TOKEN_SALT }}" ]; then
+            MISSING_SECRETS+=("STRAPI_TRANSFER_TOKEN_SALT")
+          fi
+          
+          if [ ${#MISSING_SECRETS[@]} -gt 0 ]; then
+            echo "❌ Error: Missing required secrets:"
+            printf '  - %s\n' "${MISSING_SECRETS[@]}"
+            echo ""
+            echo "Please configure these secrets in your GitHub repository settings."
+            exit 1
+          fi
+          
+          echo "✅ All required secrets are configured"
+
       - name: Terraform Init
         working-directory: ./terraform
         run: terraform init

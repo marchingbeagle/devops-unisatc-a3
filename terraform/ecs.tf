@@ -195,6 +195,19 @@ resource "aws_ecs_service" "strapi" {
     assign_public_ip = true
   }
 
+  # Ensure secrets are created before service
+  depends_on = [
+    aws_secretsmanager_secret_version.app_keys,
+    aws_secretsmanager_secret_version.admin_jwt_secret,
+    aws_secretsmanager_secret_version.api_token_salt,
+    aws_secretsmanager_secret_version.transfer_token_salt
+  ]
+
+  # Prevent issues with service updates
+  lifecycle {
+    ignore_changes = [desired_count]
+  }
+
   tags = local.common_tags
 }
 
