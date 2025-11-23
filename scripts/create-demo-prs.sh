@@ -241,7 +241,14 @@ push_branch() {
     local commit_count=$(git rev-list --count HEAD ^"$CURRENT_BRANCH" 2>/dev/null || echo "?")
     echo -e "${BLUE}  📝 Branch has ${commit_count} commit(s) to push${NC}"
     
-    # Try force-with-lease first (safer)
+    # Check if branch exists on remote (informational only)
+    if git show-ref --verify --quiet refs/remotes/origin/"$branch" 2>/dev/null; then
+        echo -e "${BLUE}  ℹ️  Updating existing branch on GitHub${NC}"
+    else
+        echo -e "${BLUE}  ℹ️  Creating new branch on GitHub${NC}"
+    fi
+    
+    # Try force-with-lease first (works for both new and existing branches)
     local push_output
     push_output=$(git push -u origin "$branch" --force-with-lease 2>&1)
     local push_status=$?
