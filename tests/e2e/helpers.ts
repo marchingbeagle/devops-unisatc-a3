@@ -82,77 +82,21 @@ export async function adminLogin(
 }
 
 /**
- * Publish an article explicitly
- * In Strapi 5, we can publish by updating the article with publishedAt set
- */
-export async function publishArticle(
-  request: APIRequestContext,
-  articleId: number,
-  apiToken: string
-): Promise<void> {
-  // First try the publish action endpoint (if it exists)
-  let publishResponse = await request.post(
-    `${BASE_URL}/api/articles/${articleId}/actions/publish`,
-    {
-      headers: {
-        Authorization: `Bearer ${apiToken}`,
-        'Content-Type': 'application/json',
-      },
-    }
-  );
-
-  // If publish endpoint doesn't exist, try updating with publishedAt
-  if (!publishResponse.ok() && publishResponse.status() === 404) {
-    // Get the current article first
-    const getResponse = await request.get(`${BASE_URL}/api/articles/${articleId}`, {
-      headers: {
-        Authorization: `Bearer ${apiToken}`,
-      },
-    });
-
-    if (getResponse.ok()) {
-      const articleData = await getResponse.json();
-      // Update with publishedAt if not already set
-      if (!articleData.data.publishedAt) {
-        publishResponse = await request.put(
-          `${BASE_URL}/api/articles/${articleId}`,
-          {
-            headers: {
-              Authorization: `Bearer ${apiToken}`,
-              'Content-Type': 'application/json',
-            },
-            data: {
-              data: {
-                publishedAt: new Date().toISOString(),
-              },
-            },
-          }
-        );
-      }
-    }
-  }
-
-  if (!publishResponse.ok()) {
-    const errorText = await publishResponse.text();
-    // If article is already published or endpoint doesn't exist, that's okay
-    if (publishResponse.status() !== 404 && publishResponse.status() !== 400) {
-      console.warn(`Publish article ${articleId} failed:`, publishResponse.status(), errorText);
-    }
-  }
-}
-
-/**
  * Create and publish an article
+ * Sets publishedAt directly when creating to avoid needing a separate publish endpoint
  */
 export async function createAndPublishArticle(
   request: APIRequestContext,
   apiToken: string,
+  adminToken: string,
   articleData: {
     title: string;
     description: string;
     publishedAt?: string;
   }
 ): Promise<number> {
+  // Set publishedAt directly to publish the article immediately
+  // This is more reliable than using a separate publish endpoint
   const createResponse = await request.post(`${BASE_URL}/api/articles`, {
     headers: {
       Authorization: `Bearer ${apiToken}`,
@@ -174,26 +118,22 @@ export async function createAndPublishArticle(
   const createData = await createResponse.json();
   const articleId = createData.data.id;
 
-  // Wait a bit for the article to be created in the database
-  await new Promise(resolve => setTimeout(resolve, 500));
-
-  // Explicitly publish the article (this ensures it's published even if publishedAt didn't work)
-  await publishArticle(request, articleId, apiToken);
-
-  // Wait a bit longer for the article to be available after publishing
-  await new Promise(resolve => setTimeout(resolve, 500));
+  // Wait a bit for the article to be created and available in the database
+  await new Promise(resolve => setTimeout(resolve, 1000));
 
   return articleId;
 }
 
 /**
  * Get a resource with retry logic
+ * Supports fallback to admin token if API token doesn't have proper permissions
  */
 export async function getResourceWithRetry<T>(
   request: APIRequestContext,
   url: string,
   apiToken: string,
-  maxRetries: number = 5
+  maxRetries: number = 5,
+  adminToken?: string
 ): Promise<T> {
   let delay = 500;
 
@@ -203,25 +143,36 @@ export async function getResourceWithRetry<T>(
       delay *= 2; // Exponential backoff
     }
 
-    const response = await request.get(url, {
+    // Try with API token first
+    let response = await request.get(url, {
       headers: {
         Authorization: `Bearer ${apiToken}`,
       },
     });
 
+    // If API token fails with 401/403 and we have an admin token, try with admin token
+    const status = response.status();
+    if ((status === 401 || status === 403) && adminToken && attempt === 0) {
+      response = await request.get(url, {
+        headers: {
+          Authorization: `Bearer ${adminToken}`,
+        },
+      });
+    }
+
     if (response.ok()) {
       return await response.json();
     }
 
-    const status = response.status();
-    if (status === 404 && attempt < maxRetries) {
+    const finalStatus = response.status();
+    if (finalStatus === 404 && attempt < maxRetries) {
       // Resource not found yet, retry
       continue;
     }
 
     const errorText = await response.text();
     if (attempt === maxRetries) {
-      throw new Error(`GET ${url} failed after ${maxRetries} attempts: ${status} ${errorText}`);
+      throw new Error(`GET ${url} failed after ${maxRetries} attempts: ${finalStatus} ${errorText}`);
     }
   }
 
