@@ -8,8 +8,9 @@ RUN npm install -g pnpm@latest-10 && \
 # Set working directory
 WORKDIR /app
 
-# Copy package files
+# Copy package files and patches directory (needed for pnpm install)
 COPY package.json pnpm-lock.yaml ./
+COPY patches ./patches
 
 # Install dependencies
 RUN pnpm install --frozen-lockfile
