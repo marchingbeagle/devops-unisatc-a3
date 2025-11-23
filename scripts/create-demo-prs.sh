@@ -217,69 +217,83 @@ echo -e "${BLUE}📝 Creating branch: ${PASSING_BRANCH}${NC}"
 git checkout "$CURRENT_BRANCH"
 git checkout -b "$PASSING_BRANCH"
 
-# Add a helpful comment to the test file
-COMMENT_LINE="  // This test verifies that articles can be created and retrieved correctly"
+# Create a backup
+cp "$TEST_FILE" "$TEST_FILE.bak"
 
-if ! grep -q "This test verifies that articles can be created" "$TEST_FILE"; then
-    # Find the line with the test description and add comment before it
-    sed -i "/test('should create a new article')/i\\
+# Add a helpful comment to the test.describe block (less likely to already exist)
+COMMENT_LINE="  // This test suite verifies CRUD operations for articles"
+
+if ! grep -q "This test suite verifies CRUD operations" "$TEST_FILE"; then
+    # Add comment after the test.describe line
+    sed -i "/^test\.describe('Article Collection E2E Tests', () => {/a\\
 $COMMENT_LINE" "$TEST_FILE"
     echo -e "${GREEN}  ✅ Added helpful comment to test file${NC}"
 else
-    echo -e "${YELLOW}  ⚠️  Comment already exists, will add timestamp instead${NC}"
-    # Add a timestamp comment to ensure we always have a unique change
+    # Comment exists, add a timestamp comment instead to ensure unique change
     TIMESTAMP_COMMENT="  // Demo PR - updated at $(date +%Y-%m-%d\ %H:%M:%S)"
     # Remove any existing timestamp comments first
     sed -i '/Demo PR - updated at/d' "$TEST_FILE"
     # Add new timestamp comment
-    sed -i "/test('should create a new article')/i\\
+    sed -i "/^test\.describe('Article Collection E2E Tests', () => {/a\\
 $TIMESTAMP_COMMENT" "$TEST_FILE"
     echo -e "${GREEN}  ✅ Added timestamp comment to test file${NC}"
 fi
+
+# Verify the change was made and is different from base
+if ! git diff --quiet "$CURRENT_BRANCH" -- "$TEST_FILE"; then
+    echo -e "${GREEN}  ✅ Modified test file with comment${NC}"
+else
+    echo -e "${YELLOW}  ⚠️  No diff detected, trying alternative change...${NC}"
+    # If still no diff, add a comment in a different location
+    if ! grep -q "// E2E test suite" "$TEST_FILE"; then
+        sed -i "1i\\
+// E2E test suite for Article collection\\
+" "$TEST_FILE"
+    fi
+    # Check again
+    if ! git diff --quiet "$CURRENT_BRANCH" -- "$TEST_FILE"; then
+        echo -e "${GREEN}  ✅ Modified test file with alternative comment${NC}"
+    else
+        echo -e "${RED}  ❌ Could not create a diff. File may be identical to base.${NC}"
+        mv "$TEST_FILE.bak" "$TEST_FILE"
+        git checkout "$CURRENT_BRANCH"
+        git branch -D "$PASSING_BRANCH" 2>/dev/null || true
+        exit 1
+    fi
+fi
+
+# Remove backup
+rm "$TEST_FILE.bak"
 
 # Stage and commit the change
 echo -e "${GREEN}  Staging changes...${NC}"
 git add "$TEST_FILE"
 
-# Check if there are actually changes to commit
+# Verify there are changes to commit
 if git diff --cached --quiet; then
-    echo -e "${YELLOW}  ⚠️  No changes to commit, creating empty commit...${NC}"
-    set +e
-    git commit --allow-empty -m "Test: Passing PR for demo
+    echo -e "${RED}  ❌ No changes to commit${NC}"
+    git checkout "$CURRENT_BRANCH"
+    git branch -D "$PASSING_BRANCH" 2>/dev/null || true
+    exit 1
+fi
 
-This PR demonstrates a passing CI check."
-    commit_status=$?
-    set -e
-else
-    echo -e "${GREEN}  Committing changes...${NC}"
-    set +e
-    git commit -m "Test: Passing PR for demo
+echo -e "${GREEN}  Committing changes...${NC}"
+set +e
+git commit -m "Test: Passing PR for demo
 
 This PR demonstrates a passing CI check. Added a helpful comment 
 to improve test documentation."
-    commit_status=$?
-    set -e
-fi
+commit_status=$?
+set -e
 
-# Verify commit was created or branch differs from base
-if [ $commit_status -eq 0 ]; then
+# Verify commit was created and branch differs from base
+if [ $commit_status -eq 0 ] && ! git diff --quiet "$CURRENT_BRANCH"..HEAD; then
     echo -e "${GREEN}  ✅ Committed passing change (commit: $(git rev-parse --short HEAD))${NC}\n"
-elif git diff --quiet "$CURRENT_BRANCH"..HEAD 2>/dev/null; then
-    # Branch doesn't differ from base, create empty commit to ensure we have something to push
-    echo -e "${YELLOW}  ⚠️  Branch matches base, creating empty commit...${NC}"
-    set +e
-    git commit --allow-empty -m "Test: Passing PR for demo
-
-This PR demonstrates a passing CI check."
-    if [ $? -eq 0 ]; then
-        echo -e "${GREEN}  ✅ Created empty commit (commit: $(git rev-parse --short HEAD))${NC}\n"
-    else
-        echo -e "${YELLOW}  ⚠️  Could not create commit, but branch exists${NC}\n"
-    fi
-    set -e
 else
-    # Branch differs from base, so we're good even if commit failed
-    echo -e "${GREEN}  ✅ Branch has changes from base (commit: $(git rev-parse --short HEAD))${NC}\n"
+    echo -e "${RED}  ❌ Failed to create commit or commit has no changes${NC}"
+    git checkout "$CURRENT_BRANCH"
+    git branch -D "$PASSING_BRANCH" 2>/dev/null || true
+    exit 1
 fi
 
 # ============================================
