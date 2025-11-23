@@ -136,12 +136,40 @@ fi
 # Create a backup
 cp "$TEST_FILE" "$TEST_FILE.bak"
 
-# Modify line 93 to have wrong expectation
-sed -i "s/expect(data.data.title).toBe('Test Article');/expect(data.data.title).toBe('Wrong Title');/" "$TEST_FILE"
+# Check what the current value is on the base branch
+BASE_VALUE=$(git show "$CURRENT_BRANCH:$TEST_FILE" | grep -o "expect(data.data.title).toBe('[^']*');" | grep -o "'[^']*'" | tr -d "'" || echo "")
+
+# Determine what to change it to
+if [ "$BASE_VALUE" = "Test Article" ]; then
+    # Base has correct value, change to wrong
+    NEW_VALUE="Wrong Title"
+    sed -i "s/expect(data.data.title).toBe('Test Article');/expect(data.data.title).toBe('Wrong Title');/" "$TEST_FILE"
+elif [ "$BASE_VALUE" = "Wrong Title" ]; then
+    # Base already has wrong value, use a different wrong value to create diff
+    NEW_VALUE="Incorrect Title"
+    sed -i "s/expect(data.data.title).toBe('Wrong Title');/expect(data.data.title).toBe('Incorrect Title');/" "$TEST_FILE"
+else
+    # Try to find and replace with a more flexible pattern
+    echo -e "${YELLOW}  ⚠️  Could not determine base value, attempting flexible replacement...${NC}"
+    NEW_VALUE="Wrong Title"
+    # Try various patterns
+    sed -i "s/expect(data\.data\.title)\.toBe('Test Article');/expect(data.data.title).toBe('Wrong Title');/" "$TEST_FILE" || \
+    sed -i "s/expect(data\.data\.title)\.toBe(\"Test Article\");/expect(data.data.title).toBe('Wrong Title');/" "$TEST_FILE" || \
+    sed -i "s/expect(data\.data\.title)\.toBe('.*');/expect(data.data.title).toBe('Wrong Title');/" "$TEST_FILE"
+fi
 
 # Verify the change was made
-if grep -q "Wrong Title" "$TEST_FILE"; then
-    echo -e "${GREEN}  ✅ Modified test to intentionally fail${NC}"
+if grep -q "expect(data.data.title).toBe('$NEW_VALUE');" "$TEST_FILE"; then
+    # Check if file actually changed from base branch
+    if ! git diff --quiet "$CURRENT_BRANCH" -- "$TEST_FILE"; then
+        echo -e "${GREEN}  ✅ Modified test to intentionally fail (expects '$NEW_VALUE')${NC}"
+    else
+        echo -e "${RED}  ❌ Could not create a diff. File may already have this value.${NC}"
+        mv "$TEST_FILE.bak" "$TEST_FILE"
+        git checkout "$CURRENT_BRANCH"
+        git branch -D "$FAILING_BRANCH" 2>/dev/null || true
+        exit 1
+    fi
 else
     echo -e "${RED}  ❌ Failed to modify test file${NC}"
     mv "$TEST_FILE.bak" "$TEST_FILE"
@@ -153,6 +181,14 @@ fi
 # Remove backup
 rm "$TEST_FILE.bak"
 
+# Check if there are changes to commit
+if git diff --quiet -- "$TEST_FILE"; then
+    echo -e "${RED}  ❌ No changes detected in test file${NC}"
+    git checkout "$CURRENT_BRANCH"
+    git branch -D "$FAILING_BRANCH" 2>/dev/null || true
+    exit 1
+fi
+
 # Stage and commit the change
 echo -e "${GREEN}  Staging changes...${NC}"
 git add "$TEST_FILE"
@@ -163,10 +199,10 @@ This PR demonstrates a failing CI check. The test expects 'Wrong Title'
 instead of 'Test Article', causing the E2E tests to fail."
 
 # Verify commit was created
-if git rev-parse --verify HEAD >/dev/null 2>&1; then
+if git rev-parse --verify HEAD >/dev/null 2>&1 && ! git diff --quiet "$CURRENT_BRANCH"..HEAD; then
     echo -e "${GREEN}  ✅ Committed failing test (commit: $(git rev-parse --short HEAD))${NC}\n"
 else
-    echo -e "${RED}  ❌ Failed to create commit${NC}"
+    echo -e "${RED}  ❌ Failed to create commit or commit has no changes${NC}"
     git checkout "$CURRENT_BRANCH"
     git branch -D "$FAILING_BRANCH" 2>/dev/null || true
     exit 1
