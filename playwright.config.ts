@@ -28,7 +28,9 @@ export default defineConfig({
   webServer: {
     command: 'pnpm start',
     url: 'http://localhost:1337',
-    reuseExistingServer: !process.env.CI,
+    // In CI, we start the server manually, so reuse it if it exists
+    // In local dev, also reuse to avoid conflicts
+    reuseExistingServer: true,
     timeout: 120 * 1000,
   },
 });
