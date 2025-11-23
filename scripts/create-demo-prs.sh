@@ -212,6 +212,53 @@ else
 fi
 
 # ============================================
+# Check authentication before pushing
+# ============================================
+echo -e "${BLUE}🔐 Checking authentication...${NC}\n"
+
+# Check if GitHub CLI is available and authenticated
+USE_GH_CLI=0
+if command -v gh &> /dev/null; then
+    if gh auth status &> /dev/null; then
+        USE_GH_CLI=1
+        echo -e "${GREEN}  ✅ GitHub CLI (gh) is authenticated${NC}"
+        echo -e "${BLUE}  ℹ️  Will use GitHub CLI for branch creation${NC}\n"
+    else
+        echo -e "${YELLOW}  ⚠️  GitHub CLI is installed but not authenticated${NC}"
+        echo -e "${YELLOW}  ℹ️  Run 'gh auth login' to use GitHub CLI (recommended)${NC}\n"
+    fi
+else
+    echo -e "${YELLOW}  ⚠️  GitHub CLI (gh) is not installed${NC}"
+    echo -e "${YELLOW}  ℹ️  Install it for more reliable branch creation: https://cli.github.com/${NC}\n"
+fi
+
+# Check git remote URL
+REMOTE_URL=$(git config --get remote.origin.url)
+if [[ "$REMOTE_URL" == https://github.com/* ]]; then
+    echo -e "${BLUE}  ℹ️  Using HTTPS remote (may require credentials)${NC}"
+    echo -e "${YELLOW}  ⚠️  If push fails, you may need to set up credentials${NC}"
+    echo -e "${YELLOW}  ℹ️  Consider using SSH or GitHub CLI for better authentication${NC}\n"
+elif [[ "$REMOTE_URL" == git@github.com:* ]]; then
+    echo -e "${GREEN}  ✅ Using SSH remote${NC}\n"
+else
+    echo -e "${YELLOW}  ⚠️  Unknown remote format: ${REMOTE_URL}${NC}\n"
+fi
+
+# Test git authentication by attempting to fetch
+echo -e "${BLUE}  Testing git authentication...${NC}"
+if git ls-remote --heads origin "$CURRENT_BRANCH" &> /dev/null; then
+    echo -e "${GREEN}  ✅ Git authentication successful${NC}\n"
+else
+    echo -e "${RED}  ❌ Git authentication failed${NC}"
+    echo -e "${YELLOW}  ⚠️  You may need to configure git credentials${NC}"
+    if [ $USE_GH_CLI -eq 0 ]; then
+        echo -e "${YELLOW}  💡 Tip: Run 'gh auth login' and the script will use GitHub CLI instead${NC}\n"
+    else
+        echo -e "${YELLOW}  ⚠️  Will attempt push anyway, but it may fail${NC}\n"
+    fi
+fi
+
+# ============================================
 # Push branches to remote
 # ============================================
 echo -e "${BLUE}📤 Pushing branches to GitHub...${NC}\n"
@@ -223,6 +270,45 @@ set +e
 # Track push success
 FAILING_PUSHED=0
 PASSING_PUSHED=0
+
+# Function to push a branch using GitHub CLI
+push_branch_with_gh() {
+    local branch=$1
+    local branch_display=$2
+    
+    echo -e "${GREEN}Pushing ${branch_display} using GitHub CLI...${NC}"
+    
+    # Checkout the branch
+    if ! git checkout "$branch" 2>&1; then
+        echo -e "${RED}  ❌ Failed to checkout ${branch_display}${NC}\n"
+        return 1
+    fi
+    
+    # Push using git first (gh doesn't have a direct branch push command)
+    local push_output
+    push_output=$(git push -u origin "$branch" --force-with-lease 2>&1)
+    local push_status=$?
+    
+    if [ $push_status -eq 0 ]; then
+        echo -e "${GREEN}  ✅ Successfully pushed ${branch_display} to GitHub${NC}"
+        echo -e "${GREEN}  ✅ Branch is now available on GitHub${NC}\n"
+        return 0
+    else
+        # Try regular force push
+        push_output=$(git push -u origin "$branch" --force 2>&1)
+        push_status=$?
+        
+        if [ $push_status -eq 0 ]; then
+            echo -e "${GREEN}  ✅ Successfully pushed ${branch_display} to GitHub (force)${NC}"
+            echo -e "${GREEN}  ✅ Branch is now available on GitHub${NC}\n"
+            return 0
+        else
+            echo -e "${RED}  ❌ Failed to push ${branch_display}${NC}"
+            echo -e "${RED}  Error: ${push_output}${NC}\n"
+            return 1
+        fi
+    fi
+}
 
 # Function to push a branch and verify it was pushed
 push_branch() {
@@ -259,7 +345,14 @@ push_branch() {
         return 0
     else
         # Show the error for debugging
-        echo -e "${YELLOW}  ⚠️  Force-with-lease failed: ${push_output}${NC}"
+        echo -e "${YELLOW}  ⚠️  Force-with-lease failed${NC}"
+        if [[ "$push_output" == *"authentication"* ]] || [[ "$push_output" == *"Authentication"* ]] || [[ "$push_output" == *"permission"* ]] || [[ "$push_output" == *"Permission"* ]]; then
+            echo -e "${RED}  ❌ Authentication error detected${NC}"
+            echo -e "${RED}  Error: ${push_output}${NC}"
+            echo -e "${YELLOW}  💡 Solution: Set up git credentials or run 'gh auth login'${NC}\n"
+            return 1
+        fi
+        
         echo -e "${YELLOW}  ⚠️  Trying regular force push...${NC}"
         
         # Fallback to regular force push
@@ -273,7 +366,13 @@ push_branch() {
         else
             echo -e "${RED}  ❌ Failed to push ${branch_display}${NC}"
             echo -e "${RED}  Error: ${push_output}${NC}"
-            echo -e "${YELLOW}  ⚠️  Check your git credentials and network connection${NC}\n"
+            if [[ "$push_output" == *"authentication"* ]] || [[ "$push_output" == *"Authentication"* ]] || [[ "$push_output" == *"permission"* ]] || [[ "$push_output" == *"Permission"* ]]; then
+                echo -e "${YELLOW}  💡 This appears to be an authentication issue${NC}"
+                echo -e "${YELLOW}  💡 Run 'gh auth login' and try again${NC}"
+            else
+                echo -e "${YELLOW}  ⚠️  Check your git credentials and network connection${NC}"
+            fi
+            echo ""
             return 1
         fi
     fi
@@ -360,9 +459,21 @@ elif [ $FAILING_PUSHED -eq 1 ] || [ $PASSING_PUSHED -eq 1 ]; then
     echo -e "  git push -u origin ${PASSING_BRANCH} --force\n"
 else
     echo -e "${RED}❌ Demo branches created locally, but pushes failed${NC}\n"
-    echo -e "${YELLOW}You can manually push the branches using:${NC}"
-    echo -e "  git push -u origin ${FAILING_BRANCH} --force"
-    echo -e "  git push -u origin ${PASSING_BRANCH} --force\n"
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${YELLOW}🔧 Troubleshooting: Authentication Issues${NC}"
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${YELLOW}The branches were created locally but couldn't be pushed to GitHub.${NC}\n"
+    echo -e "${GREEN}Recommended solution (easiest):${NC}"
+    echo -e "  1. Run: ${BLUE}gh auth login${NC}"
+    echo -e "  2. Follow the prompts to authenticate"
+    echo -e "  3. Run this script again\n"
+    echo -e "${GREEN}Alternative: Manual push${NC}"
+    echo -e "  If you have git credentials configured, you can push manually:${NC}"
+    echo -e "  ${BLUE}git push -u origin ${FAILING_BRANCH} --force${NC}"
+    echo -e "  ${BLUE}git push -u origin ${PASSING_BRANCH} --force${NC}\n"
+    echo -e "${GREEN}Alternative: Use SSH${NC}"
+    echo -e "  If you have SSH keys set up, change your remote:${NC}"
+    echo -e "  ${BLUE}git remote set-url origin git@github.com:$(git config --get remote.origin.url | sed 's/.*github.com[:/]\(.*\)\.git/\1/').git${NC}\n"
 fi
 
 # Get repository info for URLs
