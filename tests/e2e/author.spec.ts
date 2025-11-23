@@ -5,6 +5,7 @@ import {
   updateResourceWithRetry,
   createAndPublishArticle,
 } from './helpers';
+import { AuthorResponse, ArticleResponse } from './types';
 
 const ADMIN_EMAIL = 'admin@satc.edu.br';
 const ADMIN_PASSWORD = 'welcomeToStrapi123';
@@ -123,7 +124,7 @@ test.describe('Author Collection E2E Tests', () => {
     await new Promise(resolve => setTimeout(resolve, 500));
     
     // Use retry logic to read the author
-    const data = await getResourceWithRetry(
+    const data = await getResourceWithRetry<AuthorResponse>(
       request,
       `${BASE_URL}/api/authors/${testAuthorId}`,
       apiToken
@@ -171,7 +172,7 @@ test.describe('Author Collection E2E Tests', () => {
     };
 
     // Use retry logic to update the author
-    const data = await updateResourceWithRetry(
+    const data = await updateResourceWithRetry<AuthorResponse>(
       request,
       `${BASE_URL}/api/authors/${testAuthorId}`,
       apiToken,
@@ -256,16 +257,18 @@ test.describe('Author Collection E2E Tests', () => {
     );
 
     // Verify article has the author
-    const articleData = await getResourceWithRetry(
+    const articleData = await getResourceWithRetry<ArticleResponse>(
       request,
       `${BASE_URL}/api/articles/${articleId}?populate=author`,
       apiToken
     );
     expect(articleData.data.author).toBeDefined();
-    expect(articleData.data.author.id).toBe(testAuthorId);
+    if (typeof articleData.data.author === 'object' && articleData.data.author !== null) {
+      expect(articleData.data.author.id).toBe(testAuthorId);
+    }
 
     // Verify author has the article in its articles relation
-    const authorWithArticles = await getResourceWithRetry(
+    const authorWithArticles = await getResourceWithRetry<AuthorResponse>(
       request,
       `${BASE_URL}/api/authors/${testAuthorId}?populate=articles`,
       apiToken

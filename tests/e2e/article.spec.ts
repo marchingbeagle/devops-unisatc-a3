@@ -6,6 +6,7 @@ import {
   updateResourceWithRetry,
   publishArticle,
 } from './helpers';
+import { ArticleResponse } from './types';
 
 const ADMIN_EMAIL = 'admin@satc.edu.br';
 const ADMIN_PASSWORD = 'welcomeToStrapi123';
@@ -84,7 +85,7 @@ test.describe('Article Collection E2E Tests', () => {
     expect(articleId).toBeDefined();
     
     // Verify the article was created and published
-    const data = await getResourceWithRetry(
+    const data = await getResourceWithRetry<ArticleResponse>(
       request,
       `${BASE_URL}/api/articles/${articleId}`,
       apiToken
@@ -121,7 +122,7 @@ test.describe('Article Collection E2E Tests', () => {
     expect(testArticleId).toBeDefined();
 
     // Use retry logic to read the article
-    const data = await getResourceWithRetry(
+    const data = await getResourceWithRetry<ArticleResponse>(
       request,
       `${BASE_URL}/api/articles/${testArticleId}`,
       apiToken
@@ -151,7 +152,7 @@ test.describe('Article Collection E2E Tests', () => {
     };
 
     // Use retry logic to update the article
-    const data = await updateResourceWithRetry(
+    const data = await updateResourceWithRetry<ArticleResponse>(
       request,
       `${BASE_URL}/api/articles/${testArticleId}`,
       apiToken,
