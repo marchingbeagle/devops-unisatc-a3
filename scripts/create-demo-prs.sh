@@ -35,6 +35,29 @@ cd "$PROJECT_ROOT"
 CURRENT_BRANCH=$(git branch --show-current)
 echo -e "${YELLOW}Current branch: ${CURRENT_BRANCH}${NC}"
 
+# Function to always return to original branch
+cleanup_and_return() {
+    local exit_code=$?
+    # Temporarily disable set -e to ensure cleanup runs
+    set +e
+    local current_branch=$(git branch --show-current 2>/dev/null)
+    if [ -n "$CURRENT_BRANCH" ] && [ "$current_branch" != "$CURRENT_BRANCH" ]; then
+        echo -e "\n${YELLOW}Cleaning up: Returning to ${CURRENT_BRANCH}...${NC}" >&2
+        git checkout "$CURRENT_BRANCH" 2>&1 >/dev/null
+        if [ $? -eq 0 ]; then
+            echo -e "${GREEN}✅ Returned to ${CURRENT_BRANCH}${NC}" >&2
+        else
+            echo -e "${RED}❌ Failed to return to ${CURRENT_BRANCH}${NC}" >&2
+            echo -e "${YELLOW}⚠️  Please manually run: git checkout ${CURRENT_BRANCH}${NC}" >&2
+        fi
+    fi
+    exit $exit_code
+}
+
+# Set up trap to always return to original branch on exit/error
+# This ensures we always return to master even if script fails
+trap cleanup_and_return EXIT INT TERM
+
 # Check if there are uncommitted changes
 if ! git diff-index --quiet HEAD --; then
     echo -e "${RED}❌ Error: You have uncommitted changes${NC}"
@@ -193,6 +216,10 @@ fi
 # ============================================
 echo -e "${BLUE}📤 Pushing branches to remote...${NC}\n"
 
+# Temporarily disable exit on error for push operations
+# We want to continue even if pushes fail
+set +e
+
 # Track push success
 FAILING_PUSHED=0
 PASSING_PUSHED=0
@@ -245,16 +272,23 @@ else
     echo -e "${RED}  ❌ Failed to checkout ${PASSING_BRANCH}${NC}\n"
 fi
 
-# Always return to original branch
+# Re-enable exit on error
+set -e
+
+# Return to original branch (trap will handle this if script exits early)
 echo -e "${BLUE}Returning to original branch: ${CURRENT_BRANCH}${NC}"
-if git checkout "$CURRENT_BRANCH" 2>&1; then
+set +e  # Temporarily disable exit on error for checkout
+git checkout "$CURRENT_BRANCH" 2>&1
+if [ $? -eq 0 ]; then
     echo -e "${GREEN}  ✅ Returned to ${CURRENT_BRANCH}${NC}\n"
+    # Disable trap since we're already on the correct branch
+    trap - EXIT INT TERM
 else
     echo -e "${RED}  ❌ Failed to return to ${CURRENT_BRANCH}${NC}"
     echo -e "${YELLOW}  ⚠️  You are currently on: $(git branch --show-current 2>/dev/null || echo 'unknown')${NC}"
-    echo -e "${YELLOW}  ⚠️  Please manually checkout ${CURRENT_BRANCH}${NC}\n"
-    exit 1
+    echo -e "${YELLOW}  ⚠️  The cleanup trap will attempt to return you to ${CURRENT_BRANCH}${NC}\n"
 fi
+set -e  # Re-enable exit on error
 
 # ============================================
 # Display instructions
