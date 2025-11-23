@@ -90,7 +90,7 @@ test.describe('Article Collection E2E Tests', () => {
       apiToken
     );
     expect(data.data).toBeDefined();
-    expect(data.data.title).toBe('Test Article');
+    expect(data.data.title).toBe('Wrong Title');
     expect(data.data.description).toBe('This is a test article description');
   });
 
