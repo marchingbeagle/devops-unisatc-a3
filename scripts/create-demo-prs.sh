@@ -193,40 +193,103 @@ fi
 # ============================================
 echo -e "${BLUE}📤 Pushing branches to remote...${NC}\n"
 
+# Track push success
+FAILING_PUSHED=0
+PASSING_PUSHED=0
+
 # Push failing branch (with commits)
 echo -e "${GREEN}Pushing ${FAILING_BRANCH} with commits...${NC}"
-git checkout "$FAILING_BRANCH"
-if git push -u origin "$FAILING_BRANCH" --force-with-lease; then
-    echo -e "${GREEN}  ✅ Pushed ${FAILING_BRANCH} to remote${NC}"
-    echo -e "${GREEN}  ✅ Commits are now available on GitHub${NC}\n"
+if git checkout "$FAILING_BRANCH" 2>&1; then
+    # Try force-with-lease first (safer)
+    if git push -u origin "$FAILING_BRANCH" --force-with-lease 2>&1; then
+        echo -e "${GREEN}  ✅ Pushed ${FAILING_BRANCH} to remote${NC}"
+        echo -e "${GREEN}  ✅ Commits are now available on GitHub${NC}\n"
+        FAILING_PUSHED=1
+    else
+        echo -e "${YELLOW}  ⚠️  Force-with-lease failed, trying regular force push...${NC}"
+        # Fallback to regular force push
+        if git push -u origin "$FAILING_BRANCH" --force 2>&1; then
+            echo -e "${GREEN}  ✅ Pushed ${FAILING_BRANCH} to remote (force)${NC}"
+            echo -e "${GREEN}  ✅ Commits are now available on GitHub${NC}\n"
+            FAILING_PUSHED=1
+        else
+            echo -e "${RED}  ❌ Failed to push ${FAILING_BRANCH}${NC}"
+            echo -e "${YELLOW}  ⚠️  Check your git credentials and network connection${NC}\n"
+        fi
+    fi
 else
-    echo -e "${RED}  ❌ Failed to push ${FAILING_BRANCH}${NC}"
-    exit 1
+    echo -e "${RED}  ❌ Failed to checkout ${FAILING_BRANCH}${NC}\n"
 fi
 
 # Push passing branch (with commits)
 echo -e "${GREEN}Pushing ${PASSING_BRANCH} with commits...${NC}"
-git checkout "$PASSING_BRANCH"
-if git push -u origin "$PASSING_BRANCH" --force-with-lease; then
-    echo -e "${GREEN}  ✅ Pushed ${PASSING_BRANCH} to remote${NC}"
-    echo -e "${GREEN}  ✅ Commits are now available on GitHub${NC}\n"
+if git checkout "$PASSING_BRANCH" 2>&1; then
+    # Try force-with-lease first (safer)
+    if git push -u origin "$PASSING_BRANCH" --force-with-lease 2>&1; then
+        echo -e "${GREEN}  ✅ Pushed ${PASSING_BRANCH} to remote${NC}"
+        echo -e "${GREEN}  ✅ Commits are now available on GitHub${NC}\n"
+        PASSING_PUSHED=1
+    else
+        echo -e "${YELLOW}  ⚠️  Force-with-lease failed, trying regular force push...${NC}"
+        # Fallback to regular force push
+        if git push -u origin "$PASSING_BRANCH" --force 2>&1; then
+            echo -e "${GREEN}  ✅ Pushed ${PASSING_BRANCH} to remote (force)${NC}"
+            echo -e "${GREEN}  ✅ Commits are now available on GitHub${NC}\n"
+            PASSING_PUSHED=1
+        else
+            echo -e "${RED}  ❌ Failed to push ${PASSING_BRANCH}${NC}"
+            echo -e "${YELLOW}  ⚠️  Check your git credentials and network connection${NC}\n"
+        fi
+    fi
 else
-    echo -e "${RED}  ❌ Failed to push ${PASSING_BRANCH}${NC}"
-    exit 1
+    echo -e "${RED}  ❌ Failed to checkout ${PASSING_BRANCH}${NC}\n"
 fi
 
-# Return to original branch
-git checkout "$CURRENT_BRANCH"
+# Always return to original branch
+echo -e "${BLUE}Returning to original branch: ${CURRENT_BRANCH}${NC}"
+if git checkout "$CURRENT_BRANCH" 2>&1; then
+    echo -e "${GREEN}  ✅ Returned to ${CURRENT_BRANCH}${NC}\n"
+else
+    echo -e "${RED}  ❌ Failed to return to ${CURRENT_BRANCH}${NC}"
+    echo -e "${YELLOW}  ⚠️  You are currently on: $(git branch --show-current 2>/dev/null || echo 'unknown')${NC}"
+    echo -e "${YELLOW}  ⚠️  Please manually checkout ${CURRENT_BRANCH}${NC}\n"
+    exit 1
+fi
 
 # ============================================
 # Display instructions
 # ============================================
-echo -e "${GREEN}✅ Demo branches created and pushed successfully!${NC}\n"
-echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${BLUE}📋 Next Steps: Create Pull Requests Manually on GitHub${NC}"
-echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${GREEN}Both branches have been pushed to GitHub with their commits.${NC}"
-echo -e "${GREEN}You can now create the PRs manually using the links below:${NC}\n"
+if [ $FAILING_PUSHED -eq 1 ] && [ $PASSING_PUSHED -eq 1 ]; then
+    echo -e "${GREEN}✅ Demo branches created and pushed successfully!${NC}\n"
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${BLUE}📋 Next Steps: Create Pull Requests Manually on GitHub${NC}"
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${GREEN}Both branches have been pushed to GitHub with their commits.${NC}"
+    echo -e "${GREEN}You can now create the PRs manually using the links below:${NC}\n"
+elif [ $FAILING_PUSHED -eq 1 ] || [ $PASSING_PUSHED -eq 1 ]; then
+    echo -e "${YELLOW}⚠️  Demo branches created, but some pushes failed${NC}\n"
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${BLUE}📋 Status Summary${NC}"
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    if [ $FAILING_PUSHED -eq 1 ]; then
+        echo -e "${GREEN}✅ ${FAILING_BRANCH} pushed successfully${NC}"
+    else
+        echo -e "${RED}❌ ${FAILING_BRANCH} push failed${NC}"
+    fi
+    if [ $PASSING_PUSHED -eq 1 ]; then
+        echo -e "${GREEN}✅ ${PASSING_BRANCH} pushed successfully${NC}"
+    else
+        echo -e "${RED}❌ ${PASSING_BRANCH} push failed${NC}"
+    fi
+    echo -e "\n${YELLOW}You can manually push the branches using:${NC}"
+    echo -e "  git push -u origin ${FAILING_BRANCH} --force"
+    echo -e "  git push -u origin ${PASSING_BRANCH} --force\n"
+else
+    echo -e "${RED}❌ Demo branches created locally, but pushes failed${NC}\n"
+    echo -e "${YELLOW}You can manually push the branches using:${NC}"
+    echo -e "  git push -u origin ${FAILING_BRANCH} --force"
+    echo -e "  git push -u origin ${PASSING_BRANCH} --force\n"
+fi
 
 echo -e "${YELLOW}1. Create FAILING PR:${NC}"
 echo -e "   ${GREEN}Branch:${NC} ${FAILING_BRANCH}"
