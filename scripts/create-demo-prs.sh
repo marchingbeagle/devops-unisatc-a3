@@ -214,7 +214,7 @@ fi
 # ============================================
 # Push branches to remote
 # ============================================
-echo -e "${BLUE}📤 Pushing branches to remote...${NC}\n"
+echo -e "${BLUE}📤 Pushing branches to GitHub...${NC}\n"
 
 # Temporarily disable exit on error for push operations
 # We want to continue even if pushes fail
@@ -224,53 +224,80 @@ set +e
 FAILING_PUSHED=0
 PASSING_PUSHED=0
 
-# Push failing branch (with commits)
-echo -e "${GREEN}Pushing ${FAILING_BRANCH} with commits...${NC}"
-if git checkout "$FAILING_BRANCH" 2>&1; then
+# Function to push a branch and verify it was pushed
+push_branch() {
+    local branch=$1
+    local branch_display=$2
+    
+    echo -e "${GREEN}Pushing ${branch_display}...${NC}"
+    
+    # Checkout the branch
+    if ! git checkout "$branch" 2>&1; then
+        echo -e "${RED}  ❌ Failed to checkout ${branch_display}${NC}\n"
+        return 1
+    fi
+    
+    # Show what we're about to push
+    local commit_count=$(git rev-list --count HEAD ^"$CURRENT_BRANCH" 2>/dev/null || echo "?")
+    echo -e "${BLUE}  📝 Branch has ${commit_count} commit(s) to push${NC}"
+    
     # Try force-with-lease first (safer)
-    if git push -u origin "$FAILING_BRANCH" --force-with-lease 2>&1; then
-        echo -e "${GREEN}  ✅ Pushed ${FAILING_BRANCH} to remote${NC}"
-        echo -e "${GREEN}  ✅ Commits are now available on GitHub${NC}\n"
-        FAILING_PUSHED=1
+    local push_output
+    push_output=$(git push -u origin "$branch" --force-with-lease 2>&1)
+    local push_status=$?
+    
+    if [ $push_status -eq 0 ]; then
+        echo -e "${GREEN}  ✅ Successfully pushed ${branch_display} to GitHub${NC}"
+        echo -e "${GREEN}  ✅ Branch is now available on GitHub${NC}\n"
+        return 0
     else
-        echo -e "${YELLOW}  ⚠️  Force-with-lease failed, trying regular force push...${NC}"
+        # Show the error for debugging
+        echo -e "${YELLOW}  ⚠️  Force-with-lease failed: ${push_output}${NC}"
+        echo -e "${YELLOW}  ⚠️  Trying regular force push...${NC}"
+        
         # Fallback to regular force push
-        if git push -u origin "$FAILING_BRANCH" --force 2>&1; then
-            echo -e "${GREEN}  ✅ Pushed ${FAILING_BRANCH} to remote (force)${NC}"
-            echo -e "${GREEN}  ✅ Commits are now available on GitHub${NC}\n"
-            FAILING_PUSHED=1
+        push_output=$(git push -u origin "$branch" --force 2>&1)
+        push_status=$?
+        
+        if [ $push_status -eq 0 ]; then
+            echo -e "${GREEN}  ✅ Successfully pushed ${branch_display} to GitHub (force)${NC}"
+            echo -e "${GREEN}  ✅ Branch is now available on GitHub${NC}\n"
+            return 0
         else
-            echo -e "${RED}  ❌ Failed to push ${FAILING_BRANCH}${NC}"
+            echo -e "${RED}  ❌ Failed to push ${branch_display}${NC}"
+            echo -e "${RED}  Error: ${push_output}${NC}"
             echo -e "${YELLOW}  ⚠️  Check your git credentials and network connection${NC}\n"
+            return 1
         fi
     fi
-else
-    echo -e "${RED}  ❌ Failed to checkout ${FAILING_BRANCH}${NC}\n"
+}
+
+# Push failing branch
+if push_branch "$FAILING_BRANCH" "${FAILING_BRANCH}"; then
+    FAILING_PUSHED=1
 fi
 
-# Push passing branch (with commits)
-echo -e "${GREEN}Pushing ${PASSING_BRANCH} with commits...${NC}"
-if git checkout "$PASSING_BRANCH" 2>&1; then
-    # Try force-with-lease first (safer)
-    if git push -u origin "$PASSING_BRANCH" --force-with-lease 2>&1; then
-        echo -e "${GREEN}  ✅ Pushed ${PASSING_BRANCH} to remote${NC}"
-        echo -e "${GREEN}  ✅ Commits are now available on GitHub${NC}\n"
-        PASSING_PUSHED=1
-    else
-        echo -e "${YELLOW}  ⚠️  Force-with-lease failed, trying regular force push...${NC}"
-        # Fallback to regular force push
-        if git push -u origin "$PASSING_BRANCH" --force 2>&1; then
-            echo -e "${GREEN}  ✅ Pushed ${PASSING_BRANCH} to remote (force)${NC}"
-            echo -e "${GREEN}  ✅ Commits are now available on GitHub${NC}\n"
-            PASSING_PUSHED=1
-        else
-            echo -e "${RED}  ❌ Failed to push ${PASSING_BRANCH}${NC}"
-            echo -e "${YELLOW}  ⚠️  Check your git credentials and network connection${NC}\n"
-        fi
-    fi
-else
-    echo -e "${RED}  ❌ Failed to checkout ${PASSING_BRANCH}${NC}\n"
+# Push passing branch
+if push_branch "$PASSING_BRANCH" "${PASSING_BRANCH}"; then
+    PASSING_PUSHED=1
 fi
+
+# Verify branches are on remote
+echo -e "${BLUE}Verifying branches on GitHub...${NC}"
+git fetch origin 2>&1 >/dev/null
+
+if git show-ref --verify --quiet refs/remotes/origin/"$FAILING_BRANCH"; then
+    echo -e "${GREEN}  ✅ Verified: ${FAILING_BRANCH} exists on GitHub${NC}"
+else
+    echo -e "${RED}  ❌ Warning: ${FAILING_BRANCH} not found on GitHub${NC}"
+fi
+
+if git show-ref --verify --quiet refs/remotes/origin/"$PASSING_BRANCH"; then
+    echo -e "${GREEN}  ✅ Verified: ${PASSING_BRANCH} exists on GitHub${NC}"
+else
+    echo -e "${RED}  ❌ Warning: ${PASSING_BRANCH} not found on GitHub${NC}"
+fi
+echo ""
 
 # Re-enable exit on error
 set -e
@@ -293,13 +320,19 @@ set -e  # Re-enable exit on error
 # ============================================
 # Display instructions
 # ============================================
+echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${BLUE}📋 Summary${NC}"
+echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+
 if [ $FAILING_PUSHED -eq 1 ] && [ $PASSING_PUSHED -eq 1 ]; then
-    echo -e "${GREEN}✅ Demo branches created and pushed successfully!${NC}\n"
+    echo -e "${GREEN}✅ SUCCESS: Both demo branches created and pushed to GitHub!${NC}\n"
+    echo -e "${GREEN}You now have 2 new branches on GitHub:${NC}"
+    echo -e "  • ${FAILING_BRANCH}"
+    echo -e "  • ${PASSING_BRANCH}\n"
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${BLUE}📋 Next Steps: Create Pull Requests Manually on GitHub${NC}"
+    echo -e "${BLUE}📋 Next Steps: Create Pull Requests on GitHub${NC}"
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${GREEN}Both branches have been pushed to GitHub with their commits.${NC}"
-    echo -e "${GREEN}You can now create the PRs manually using the links below:${NC}\n"
+    echo -e "${GREEN}Both branches are available on GitHub. You can now create PRs:${NC}\n"
 elif [ $FAILING_PUSHED -eq 1 ] || [ $PASSING_PUSHED -eq 1 ]; then
     echo -e "${YELLOW}⚠️  Demo branches created, but some pushes failed${NC}\n"
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
@@ -325,18 +358,53 @@ else
     echo -e "  git push -u origin ${PASSING_BRANCH} --force\n"
 fi
 
-echo -e "${YELLOW}1. Create FAILING PR:${NC}"
-echo -e "   ${GREEN}Branch:${NC} ${FAILING_BRANCH}"
-echo -e "   ${GREEN}URL:${NC} https://github.com/$(git config --get remote.origin.url | sed 's/.*github.com[:/]\(.*\)\.git/\1/')/compare/master...${FAILING_BRANCH}?expand=1"
-echo -e "   ${GREEN}Expected:${NC} ❌ Tests will fail (E2E test expects wrong value)"
-echo ""
+# Get repository info for URLs
+REPO_URL=$(git config --get remote.origin.url | sed 's/.*github.com[:/]\(.*\)\.git/\1/' || echo "")
 
-echo -e "${YELLOW}2. Create PASSING PR:${NC}"
-echo -e "   ${GREEN}Branch:${NC} ${PASSING_BRANCH}"
-echo -e "   ${GREEN}URL:${NC} https://github.com/$(git config --get remote.origin.url | sed 's/.*github.com[:/]\(.*\)\.git/\1/')/compare/master...${PASSING_BRANCH}?expand=1"
-echo -e "   ${GREEN}Expected:${NC} ✅ All tests will pass"
-echo ""
-
-echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${GREEN}✨ Done!${NC}\n"
+if [ $FAILING_PUSHED -eq 1 ] && [ $PASSING_PUSHED -eq 1 ]; then
+    echo -e "${YELLOW}📝 Create Pull Requests:${NC}\n"
+    echo -e "${YELLOW}1. FAILING PR (tests will fail):${NC}"
+    echo -e "   ${GREEN}Branch:${NC} ${FAILING_BRANCH}"
+    if [ -n "$REPO_URL" ]; then
+        echo -e "   ${GREEN}URL:${NC} https://github.com/${REPO_URL}/compare/master...${FAILING_BRANCH}?expand=1"
+    fi
+    echo -e "   ${GREEN}Expected:${NC} ❌ Tests will fail (E2E test expects wrong value)"
+    echo ""
+    
+    echo -e "${YELLOW}2. PASSING PR (tests will pass):${NC}"
+    echo -e "   ${GREEN}Branch:${NC} ${PASSING_BRANCH}"
+    if [ -n "$REPO_URL" ]; then
+        echo -e "   ${GREEN}URL:${NC} https://github.com/${REPO_URL}/compare/master...${PASSING_BRANCH}?expand=1"
+    fi
+    echo -e "   ${GREEN}Expected:${NC} ✅ All tests will pass"
+    echo ""
+    
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${GREEN}✨ Script completed successfully!${NC}"
+    echo -e "${GREEN}✨ Both branches are now on GitHub and ready for PR creation.${NC}\n"
+elif [ $FAILING_PUSHED -eq 1 ] || [ $PASSING_PUSHED -eq 1 ]; then
+    echo -e "${YELLOW}📝 Create Pull Requests (for successfully pushed branches):${NC}\n"
+    if [ $FAILING_PUSHED -eq 1 ]; then
+        echo -e "${YELLOW}1. FAILING PR:${NC}"
+        echo -e "   ${GREEN}Branch:${NC} ${FAILING_BRANCH}"
+        if [ -n "$REPO_URL" ]; then
+            echo -e "   ${GREEN}URL:${NC} https://github.com/${REPO_URL}/compare/master...${FAILING_BRANCH}?expand=1"
+        fi
+        echo ""
+    fi
+    if [ $PASSING_PUSHED -eq 1 ]; then
+        echo -e "${YELLOW}2. PASSING PR:${NC}"
+        echo -e "   ${GREEN}Branch:${NC} ${PASSING_BRANCH}"
+        if [ -n "$REPO_URL" ]; then
+            echo -e "   ${GREEN}URL:${NC} https://github.com/${REPO_URL}/compare/master...${PASSING_BRANCH}?expand=1"
+        fi
+        echo ""
+    fi
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${YELLOW}⚠️  Script completed with warnings. Some branches may need manual push.${NC}\n"
+else
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${RED}❌ Script completed but branches were not pushed to GitHub.${NC}"
+    echo -e "${YELLOW}Please check your git credentials and try pushing manually.${NC}\n"
+fi
 
