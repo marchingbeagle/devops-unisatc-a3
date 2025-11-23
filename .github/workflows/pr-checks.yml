@@ -33,26 +33,115 @@ jobs:
       - name: Build Strapi
         run: pnpm build
 
+      - name: Generate Strapi secrets
+        id: secrets
+        run: |
+          # Generate random secrets for CI testing
+          # These are only used for CI and don't need to be secure
+          echo "Generating Strapi secrets for CI..."
+          
+          # Generate APP_KEYS (4 keys, comma-separated)
+          APP_KEY1=$(openssl rand -base64 32)
+          APP_KEY2=$(openssl rand -base64 32)
+          APP_KEY3=$(openssl rand -base64 32)
+          APP_KEY4=$(openssl rand -base64 32)
+          APP_KEYS="${APP_KEY1},${APP_KEY2},${APP_KEY3},${APP_KEY4}"
+          
+          # Generate other secrets
+          ADMIN_JWT_SECRET=$(openssl rand -base64 32)
+          JWT_SECRET=$(openssl rand -base64 32)
+          API_TOKEN_SALT=$(openssl rand -base64 32)
+          TRANSFER_TOKEN_SALT=$(openssl rand -base64 32)
+          
+          # Export as GitHub Actions environment variables for subsequent steps
+          echo "APP_KEYS=${APP_KEYS}" >> $GITHUB_ENV
+          echo "ADMIN_JWT_SECRET=${ADMIN_JWT_SECRET}" >> $GITHUB_ENV
+          echo "JWT_SECRET=${JWT_SECRET}" >> $GITHUB_ENV
+          echo "API_TOKEN_SALT=${API_TOKEN_SALT}" >> $GITHUB_ENV
+          echo "TRANSFER_TOKEN_SALT=${TRANSFER_TOKEN_SALT}" >> $GITHUB_ENV
+          
+          echo "✅ Secrets generated successfully"
+
       - name: Start Strapi server
-        run: pnpm start &
+        run: |
+          echo "Starting Strapi server..."
+          # Create .tmp directory for database
+          mkdir -p .tmp
+          # Start server in background and capture PID
+          pnpm start > strapi.log 2>&1 &
+          echo $! > strapi.pid
+          echo "Strapi server started (PID: $(cat strapi.pid))"
         env:
           NODE_ENV: production
           DATABASE_CLIENT: sqlite
           DATABASE_FILENAME: .tmp/data.db
           HOST: 0.0.0.0
           PORT: 1337
+          APP_KEYS: ${{ env.APP_KEYS }}
+          ADMIN_JWT_SECRET: ${{ env.ADMIN_JWT_SECRET }}
+          JWT_SECRET: ${{ env.JWT_SECRET }}
+          API_TOKEN_SALT: ${{ env.API_TOKEN_SALT }}
+          TRANSFER_TOKEN_SALT: ${{ env.TRANSFER_TOKEN_SALT }}
 
       - name: Wait for Strapi to be ready
         run: |
           echo "Waiting for Strapi to start..."
-          timeout 120 bash -c 'until curl -f http://localhost:1337/admin; do sleep 2; done'
-          echo "Strapi is ready!"
+          MAX_ATTEMPTS=60
+          ATTEMPT=0
+          
+          while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+            if curl -f -s http://localhost:1337/admin > /dev/null 2>&1; then
+              echo "✅ Strapi is ready!"
+              exit 0
+            fi
+            
+            # Check if process is still running
+            if ! ps -p $(cat strapi.pid 2>/dev/null) > /dev/null 2>&1; then
+              echo "❌ Strapi process died. Checking logs..."
+              tail -50 strapi.log || true
+              exit 1
+            fi
+            
+            ATTEMPT=$((ATTEMPT + 1))
+            echo "Attempt $ATTEMPT/$MAX_ATTEMPTS: Waiting for Strapi..."
+            sleep 2
+          done
+          
+          echo "❌ Strapi failed to start within timeout period"
+          echo "Last 50 lines of log:"
+          tail -50 strapi.log || true
+          exit 1
 
       - name: Run E2E tests
         run: pnpm test:e2e
         env:
           BASE_URL: http://localhost:1337
           CI: true
+
+      - name: Stop Strapi server
+        if: always()
+        run: |
+          if [ -f strapi.pid ]; then
+            PID=$(cat strapi.pid)
+            if ps -p $PID > /dev/null 2>&1; then
+              echo "Stopping Strapi server (PID: $PID)..."
+              kill $PID || true
+              sleep 2
+              # Force kill if still running
+              if ps -p $PID > /dev/null 2>&1; then
+                kill -9 $PID || true
+              fi
+            fi
+          fi
+
+      - name: Upload Strapi logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: strapi-logs
+          path: strapi.log
+          retention-days: 7
+          if-no-files-found: ignore
 
       - name: Upload test results
         if: always()
