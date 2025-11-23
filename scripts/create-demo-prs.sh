@@ -68,17 +68,27 @@ branch_exists() {
     git show-ref --verify --quiet refs/remotes/origin/"$branch"
 }
 
-# Check if branches already exist
+# Function to delete branch if it exists
+delete_branch_if_exists() {
+    local branch=$1
+    if git show-ref --verify --quiet refs/heads/"$branch"; then
+        echo -e "${YELLOW}  ⚠️  Branch '$branch' exists locally, deleting...${NC}"
+        git branch -D "$branch" 2>/dev/null || true
+    fi
+    if git show-ref --verify --quiet refs/remotes/origin/"$branch"; then
+        echo -e "${YELLOW}  ⚠️  Branch '$branch' exists on remote, will be overwritten on push${NC}"
+    fi
+}
+
+# Check if branches already exist and delete them if needed
 if branch_exists "$FAILING_BRANCH"; then
-    echo -e "${RED}❌ Error: Branch '$FAILING_BRANCH' already exists${NC}"
-    echo "Please delete it first or use a different branch name"
-    exit 1
+    echo -e "${YELLOW}⚠️  Branch '$FAILING_BRANCH' already exists${NC}"
+    delete_branch_if_exists "$FAILING_BRANCH"
 fi
 
 if branch_exists "$PASSING_BRANCH"; then
-    echo -e "${RED}❌ Error: Branch '$PASSING_BRANCH' already exists${NC}"
-    echo "Please delete it first or use a different branch name"
-    exit 1
+    echo -e "${YELLOW}⚠️  Branch '$PASSING_BRANCH' already exists${NC}"
+    delete_branch_if_exists "$PASSING_BRANCH"
 fi
 
 echo -e "\n${GREEN}Creating branches for demo PRs...${NC}\n"
@@ -186,7 +196,7 @@ echo -e "${BLUE}📤 Pushing branches to remote...${NC}\n"
 # Push failing branch (with commits)
 echo -e "${GREEN}Pushing ${FAILING_BRANCH} with commits...${NC}"
 git checkout "$FAILING_BRANCH"
-if git push -u origin "$FAILING_BRANCH"; then
+if git push -u origin "$FAILING_BRANCH" --force-with-lease; then
     echo -e "${GREEN}  ✅ Pushed ${FAILING_BRANCH} to remote${NC}"
     echo -e "${GREEN}  ✅ Commits are now available on GitHub${NC}\n"
 else
@@ -197,7 +207,7 @@ fi
 # Push passing branch (with commits)
 echo -e "${GREEN}Pushing ${PASSING_BRANCH} with commits...${NC}"
 git checkout "$PASSING_BRANCH"
-if git push -u origin "$PASSING_BRANCH"; then
+if git push -u origin "$PASSING_BRANCH" --force-with-lease; then
     echo -e "${GREEN}  ✅ Pushed ${PASSING_BRANCH} to remote${NC}"
     echo -e "${GREEN}  ✅ Commits are now available on GitHub${NC}\n"
 else
