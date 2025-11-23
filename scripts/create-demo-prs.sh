@@ -136,33 +136,44 @@ fi
 # Create a backup
 cp "$TEST_FILE" "$TEST_FILE.bak"
 
-# Check what the current value is on the base branch
-BASE_VALUE=$(git show "$CURRENT_BRANCH:$TEST_FILE" | grep -o "expect(data.data.title).toBe('[^']*');" | grep -o "'[^']*'" | tr -d "'" || echo "")
+# Check what the current assertion is on the base branch
+# We'll change expect(articleId).toBeGreaterThan(0) to expect(articleId).toBeLessThan(0)
+# This will always fail since articleId will always be > 0
+BASE_LINE=$(git show "$CURRENT_BRANCH:$TEST_FILE" | grep -E "expect\(articleId\)\.toBe(Greater|Less)Than\(0\)" || echo "")
 
 # Determine what to change it to
-if [ "$BASE_VALUE" = "Test Article" ]; then
-    # Base has correct value, change to wrong
-    NEW_VALUE="Wrong Title"
-    sed -i "s/expect(data.data.title).toBe('Test Article');/expect(data.data.title).toBe('Wrong Title');/" "$TEST_FILE"
-elif [ "$BASE_VALUE" = "Wrong Title" ]; then
-    # Base already has wrong value, use a different wrong value to create diff
-    NEW_VALUE="Incorrect Title"
-    sed -i "s/expect(data.data.title).toBe('Wrong Title');/expect(data.data.title).toBe('Incorrect Title');/" "$TEST_FILE"
+if echo "$BASE_LINE" | grep -q "toBeGreaterThan(0)"; then
+    # Base has correct assertion, change to wrong one that will fail
+    sed -i "s/expect(articleId)\.toBeGreaterThan(0);/expect(articleId).toBeLessThan(0);/" "$TEST_FILE"
+    NEW_ASSERTION="toBeLessThan(0)"
+    echo -e "${GREEN}  ✅ Modified test to intentionally fail (changed toBeGreaterThan to toBeLessThan)${NC}"
+elif echo "$BASE_LINE" | grep -q "toBeLessThan(0)"; then
+    # Base already has wrong value, use a different wrong assertion
+    sed -i "s/expect(articleId)\.toBeLessThan(0);/expect(articleId).toBe(-1);/" "$TEST_FILE"
+    NEW_ASSERTION="toBe(-1)"
+    echo -e "${GREEN}  ✅ Modified test to intentionally fail (changed toBeLessThan to toBe(-1))${NC}"
 else
     # Try to find and replace with a more flexible pattern
-    echo -e "${YELLOW}  ⚠️  Could not determine base value, attempting flexible replacement...${NC}"
-    NEW_VALUE="Wrong Title"
-    # Try various patterns
-    sed -i "s/expect(data\.data\.title)\.toBe('Test Article');/expect(data.data.title).toBe('Wrong Title');/" "$TEST_FILE" || \
-    sed -i "s/expect(data\.data\.title)\.toBe(\"Test Article\");/expect(data.data.title).toBe('Wrong Title');/" "$TEST_FILE" || \
-    sed -i "s/expect(data\.data\.title)\.toBe('.*');/expect(data.data.title).toBe('Wrong Title');/" "$TEST_FILE"
+    echo -e "${YELLOW}  ⚠️  Could not find expected assertion pattern, attempting flexible replacement...${NC}"
+    # Try to change any toBeGreaterThan(0) to toBeLessThan(0)
+    sed -i "s/expect(articleId)\.toBeGreaterThan(0);/expect(articleId).toBeLessThan(0);/" "$TEST_FILE" 2>/dev/null
+    if grep -q "expect(articleId)\.toBeLessThan(0)" "$TEST_FILE"; then
+        NEW_ASSERTION="toBeLessThan(0)"
+        echo -e "${GREEN}  ✅ Modified test assertion${NC}"
+    else
+        echo -e "${RED}  ❌ Failed to modify test file - could not find assertion to change${NC}"
+        mv "$TEST_FILE.bak" "$TEST_FILE"
+        git checkout "$CURRENT_BRANCH"
+        git branch -D "$FAILING_BRANCH" 2>/dev/null || true
+        exit 1
+    fi
 fi
 
 # Verify the change was made
-if grep -q "expect(data.data.title).toBe('$NEW_VALUE');" "$TEST_FILE"; then
+if grep -q "expect(articleId)\.toBeLessThan(0)" "$TEST_FILE" || grep -q "expect(articleId)\.toBe(-1)" "$TEST_FILE"; then
     # Check if file actually changed from base branch
     if ! git diff --quiet "$CURRENT_BRANCH" -- "$TEST_FILE"; then
-        echo -e "${GREEN}  ✅ Modified test to intentionally fail (expects '$NEW_VALUE')${NC}"
+        echo -e "${GREEN}  ✅ Test modified successfully (will fail with assertion: $NEW_ASSERTION)${NC}"
     else
         echo -e "${RED}  ❌ Could not create a diff. File may already have this value.${NC}"
         mv "$TEST_FILE.bak" "$TEST_FILE"
@@ -195,8 +206,9 @@ git add "$TEST_FILE"
 echo -e "${GREEN}  Committing changes...${NC}"
 git commit -m "Test: Intentionally failing E2E test for demo
 
-This PR demonstrates a failing CI check. The test expects 'Wrong Title' 
-instead of 'Test Article', causing the E2E tests to fail."
+This PR demonstrates a failing CI check. The test assertion was changed 
+from toBeGreaterThan(0) to toBeLessThan(0), which will always fail since 
+articleId will always be greater than 0."
 
 # Verify commit was created
 if git rev-parse --verify HEAD >/dev/null 2>&1 && ! git diff --quiet "$CURRENT_BRANCH"..HEAD; then
@@ -225,7 +237,8 @@ COMMENT_LINE="  // This test suite verifies CRUD operations for articles"
 
 if ! grep -q "This test suite verifies CRUD operations" "$TEST_FILE"; then
     # Add comment after the test.describe line
-    sed -i "/^test\.describe('Article Collection E2E Tests', () => {/a\\
+    # Use a more flexible pattern to match the describe line
+    sed -i "/test\.describe('Article Collection E2E Tests'/a\\
 $COMMENT_LINE" "$TEST_FILE"
     echo -e "${GREEN}  ✅ Added helpful comment to test file${NC}"
 else
@@ -234,7 +247,7 @@ else
     # Remove any existing timestamp comments first
     sed -i '/Demo PR - updated at/d' "$TEST_FILE"
     # Add new timestamp comment
-    sed -i "/^test\.describe('Article Collection E2E Tests', () => {/a\\
+    sed -i "/test\.describe('Article Collection E2E Tests'/a\\
 $TIMESTAMP_COMMENT" "$TEST_FILE"
     echo -e "${GREEN}  ✅ Added timestamp comment to test file${NC}"
 fi
@@ -245,8 +258,9 @@ if ! git diff --quiet "$CURRENT_BRANCH" -- "$TEST_FILE"; then
 else
     echo -e "${YELLOW}  ⚠️  No diff detected, trying alternative change...${NC}"
     # If still no diff, add a comment in a different location
-    if ! grep -q "// E2E test suite" "$TEST_FILE"; then
-        sed -i "1i\\
+    if ! grep -q "// E2E test suite for Article collection" "$TEST_FILE"; then
+        # Add comment after the imports, before the constants
+        sed -i "/^const ADMIN_EMAIL =/i\\
 // E2E test suite for Article collection\\
 " "$TEST_FILE"
     fi
@@ -254,11 +268,22 @@ else
     if ! git diff --quiet "$CURRENT_BRANCH" -- "$TEST_FILE"; then
         echo -e "${GREEN}  ✅ Modified test file with alternative comment${NC}"
     else
-        echo -e "${RED}  ❌ Could not create a diff. File may be identical to base.${NC}"
-        mv "$TEST_FILE.bak" "$TEST_FILE"
-        git checkout "$CURRENT_BRANCH"
-        git branch -D "$PASSING_BRANCH" 2>/dev/null || true
-        exit 1
+        # Last resort: add a comment inside the test
+        if ! grep -q "// Demo PR: Passing test" "$TEST_FILE"; then
+            sed -i "/test('should create a new article'/a\\
+    // Demo PR: Passing test - no functional changes\\
+" "$TEST_FILE"
+        fi
+        # Final check
+        if ! git diff --quiet "$CURRENT_BRANCH" -- "$TEST_FILE"; then
+            echo -e "${GREEN}  ✅ Modified test file with test comment${NC}"
+        else
+            echo -e "${RED}  ❌ Could not create a diff. File may be identical to base.${NC}"
+            mv "$TEST_FILE.bak" "$TEST_FILE"
+            git checkout "$CURRENT_BRANCH"
+            git branch -D "$PASSING_BRANCH" 2>/dev/null || true
+            exit 1
+        fi
     fi
 fi
 
@@ -571,7 +596,7 @@ if [ $FAILING_PUSHED -eq 1 ] && [ $PASSING_PUSHED -eq 1 ]; then
     if [ -n "$REPO_URL" ]; then
         echo -e "   ${GREEN}URL:${NC} https://github.com/${REPO_URL}/compare/master...${FAILING_BRANCH}?expand=1"
     fi
-    echo -e "   ${GREEN}Expected:${NC} ❌ Tests will fail (E2E test expects wrong value)"
+    echo -e "   ${GREEN}Expected:${NC} ❌ Tests will fail (E2E test assertion changed to always fail)"
     echo ""
     
     echo -e "${YELLOW}2. PASSING PR (tests will pass):${NC}"
