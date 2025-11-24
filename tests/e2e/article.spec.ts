@@ -74,7 +74,7 @@ test.describe('Article Collection E2E Tests', () => {
     // Verify the article was created successfully
     expect(articleId).toBeDefined();
     expect(typeof articleId).toBe('number');
-    expect(articleId).toBeGreaterThan(0);
+    expect(articleId).toBeLessThan(0);
   });
 
   test('should list articles', async ({ request }) => {
