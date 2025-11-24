@@ -11,6 +11,7 @@ const ADMIN_PASSWORD = 'welcomeToStrapi123';
 const BASE_URL = process.env.BASE_URL || 'http://localhost:1337';
 
 test.describe('Article Collection E2E Tests', () => {
+  // This test suite verifies CRUD operations for articles
   let authToken: string;
   let apiToken: string;
   let articleId: number;
