@@ -205,7 +205,7 @@ The project includes a complete CI/CD pipeline with three GitHub Actions workflo
 2. ECS service pulls the Docker image from Docker Hub
 3. New task starts with the updated image
 4. Health checks ensure service is running
-5. Old task is stopped after new one is healthy
+5. Old task is stopped after new one is healthy.
 
 **Workflow Execution:**
 
