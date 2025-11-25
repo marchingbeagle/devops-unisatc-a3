@@ -19,7 +19,7 @@ This project implements a complete DevOps pipeline for Strapi CMS with automated
 - Generate Strapi secrets
 - Create Docker Hub account and access tokens
 - Set up AWS credentials
-- Configure GitHub Secrets
+- Configure GitHub Secrets.
 - Set up local development environment
 
 You can also quickly generate Strapi secrets using:
